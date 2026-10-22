@@ -1,10 +1,11 @@
 import http from 'node:http';
+import { randomBytes } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { URL } from 'node:url';
 import mysql from 'mysql2/promise';
-import { hashPassword, verifyPassword, newSessionToken } from './security.js';
 
 const PORT = Number(process.env.PORT || 3000);
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
 const pool = mysql.createPool({
   host: process.env.DB_HOST || '127.0.0.1',
   port: Number(process.env.DB_PORT || 3306),
@@ -103,21 +104,18 @@ async function registerAccount(data) {
   }
   validEmail(data.email);
   if (data.name.trim().length > 120 || data.phone.trim().length > 24) fail(400, 'Name or phone is too long');
-  if (data.password.length < 10 || !/[A-Za-z]/.test(data.password) || !/[0-9]/.test(data.password)) {
-    fail(400, 'Password must have at least 10 characters and include a letter and number');
-  }
-  const passwordHash = await hashPassword(data.password);
+  if (data.password.length > 255) fail(400, 'Password must be 255 characters or fewer');
 
   if (kind === 'owner') {
-    const result = await query('INSERT INTO OWNER (name,email,phone,password_hash) VALUES (?,?,?,?)',
-      [data.name.trim(), data.email.trim().toLowerCase(), data.phone.trim(), passwordHash]);
+    const result = await query('INSERT INTO OWNER (name,email,phone,password) VALUES (?,?,?,?)',
+      [data.name.trim(), data.email.trim().toLowerCase(), data.phone.trim(), data.password]);
     return { kind, id: result.insertId, name: data.name.trim(), email: data.email.trim().toLowerCase() };
   }
 
   if (!['Male', 'Female', 'Non-binary', 'Undisclosed'].includes(data.gender)) fail(400, 'Choose a valid gender');
   if (typeof data.college !== 'string' || !data.college.trim() || data.college.length > 150) fail(400, 'College is required');
-  const result = await query('INSERT INTO STUDENT (name,email,password_hash,phone,gender,college) VALUES (?,?,?,?,?,?)',
-    [data.name.trim(), data.email.trim().toLowerCase(), passwordHash, data.phone.trim(), data.gender, data.college.trim()]);
+  const result = await query('INSERT INTO STUDENT (name,email,password,phone,gender,college) VALUES (?,?,?,?,?,?)',
+    [data.name.trim(), data.email.trim().toLowerCase(), data.password, data.phone.trim(), data.gender, data.college.trim()]);
   return { kind, id: result.insertId, name: data.name.trim(), email: data.email.trim().toLowerCase() };
 }
 
@@ -234,15 +232,15 @@ async function route(request, response, url) {
     if (prior.until > Date.now() && prior.count >= 8) fail(429, 'Too many sign-in attempts. Try again in 15 minutes.');
     const table = data.kind === 'owner' ? 'OWNER' : 'STUDENT';
     const idColumn = data.kind === 'owner' ? 'owner_id' : 'student_id';
-    const rows = await query(`SELECT ${idColumn} AS id,name,email,password_hash FROM ${table} WHERE email=?`, [data.email.trim().toLowerCase()]);
-    if (!rows.length || !await verifyPassword(data.password, rows[0].password_hash)) {
+    const rows = await query(`SELECT ${idColumn} AS id,name,email,password FROM ${table} WHERE email=?`, [data.email.trim().toLowerCase()]);
+    if (!rows.length || data.password !== rows[0].password) {
       const count = prior.until > Date.now() ? prior.count + 1 : 1;
       loginAttempts.set(key, { count, until: Date.now() + 15 * 60 * 1000 });
       fail(401, 'Email or password is incorrect');
     }
     loginAttempts.delete(key);
     const account = rows[0];
-    const token = newSessionToken();
+    const token = randomBytes(32).toString('base64url');
     sessions.set(token, { user: { kind: data.kind, id: Number(account.id), name: account.name, email: account.email }, expiresAt: Date.now() + 12 * 60 * 60 * 1000 });
     return send(response, 200, { ok: true, token, user: sessions.get(token).user });
   }
@@ -299,7 +297,7 @@ async function route(request, response, url) {
   }
 
   if (user.kind === 'student' && method === 'GET' && path === '/api/me/compatibility') {
-    const items = await query(`SELECT s.name,s.college,c.compatibility_percent,
+    const items = await query(`SELECT s.name,s.college,s.phone,c.compatibility_percent,
       p.smoking,p.sleep_schedule,p.food_type,p.cleanliness
       FROM v_roommate_compatibility c JOIN STUDENT s ON s.student_id=c.other_student_id
       JOIN ROOMMATE_PREFERENCE p ON p.student_id=s.student_id
@@ -391,7 +389,10 @@ async function route(request, response, url) {
 
   if (user.kind === 'owner' && method === 'GET' && path === '/api/owner/bookings') {
     const items = await query(`SELECT b.booking_id,b.booking_date,b.check_in_date,b.status,
-      s.name AS student_name,s.gender,s.college,r.room_id,r.room_type,r.capacity,r.rent_per_month,
+      s.name AS student_name,
+      CASE WHEN b.status='Pending' THEN s.email ELSE NULL END AS student_email,
+      CASE WHEN b.status='Pending' THEN s.phone ELSE NULL END AS student_phone,
+      s.gender,s.college,r.room_id,r.room_type,r.capacity,r.rent_per_month,
       h.hostel_id,h.name AS hostel_name
       FROM BOOKING b JOIN STUDENT s ON s.student_id=b.student_id
       JOIN ROOM r ON r.room_id=b.room_id JOIN HOSTEL h ON h.hostel_id=r.hostel_id
@@ -409,15 +410,28 @@ async function route(request, response, url) {
 }
 
 const server = http.createServer(async (request, response) => {
-  const origin = request.headers.origin;
-  if (origin === CLIENT_ORIGIN) {
-    response.setHeader('Access-Control-Allow-Origin', CLIENT_ORIGIN);
-    response.setHeader('Vary', 'Origin');
-    response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    response.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,OPTIONS');
-  }
   try {
     const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
+    if (!url.pathname.startsWith('/api')) {
+      const files = {
+        '/': ['index.html', 'text/html; charset=utf-8'],
+        '/index.html': ['index.html', 'text/html; charset=utf-8'],
+        '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
+        '/app.js': ['app.js', 'text/javascript; charset=utf-8']
+      };
+      const entry = files[url.pathname];
+      if (!entry) {
+        response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+        return response.end('Not found');
+      }
+      const contents = await readFile(new URL('../public/' + entry[0], import.meta.url));
+      response.writeHead(200, {
+        'Content-Type': entry[1],
+        'Cache-Control': 'no-cache',
+        'X-Content-Type-Options': 'nosniff'
+      });
+      return response.end(contents);
+    }
     await route(request, response, url);
   } catch (error) {
     const status = error.status || (error.code === 'ER_DUP_ENTRY' ? 409 : error.sqlState === '45000' ? 409 : 500);

@@ -16,7 +16,7 @@ CREATE TABLE OWNER (
   name VARCHAR(120) NOT NULL,
   email VARCHAR(254) NOT NULL,
   phone VARCHAR(24) NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
+  password VARCHAR(255) NOT NULL,
   PRIMARY KEY (owner_id),
   UNIQUE KEY uq_owner_email (email)
 ) ENGINE=InnoDB;
@@ -76,7 +76,7 @@ CREATE TABLE STUDENT (
   student_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   name VARCHAR(120) NOT NULL,
   email VARCHAR(254) NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
+  password VARCHAR(255) NOT NULL,
   phone VARCHAR(24) NOT NULL,
   gender ENUM('Male','Female','Non-binary','Undisclosed') NOT NULL,
   college VARCHAR(150) NOT NULL,

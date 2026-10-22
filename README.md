@@ -1,26 +1,41 @@
-# Student Accommodation and Roommate Finder
+# Hostel Finder — DBMS Mini Project
 
-A small DBMS mini project centered on the MySQL model in [`CASE_STUDY.md`](CASE_STUDY.md). Owners list hostels, rooms, and facilities. Students search by city, rent, and facilities; save roommate preferences; book a room; and review a hostel. The interface stays deliberately simple so the database and its relationships remain the focus.
+A small hostel and roommate finder built to demonstrate a relational MySQL database. The browser interface uses plain HTML, CSS, and JavaScript. A small Node.js server serves the page and API; the browser cannot connect directly to MySQL.
 
-## Technology
+## Project folders
 
-- MySQL 8.x for the nine-relational schema, constraints, view, triggers, and booking procedures.
-- Node.js 20+ with the built-in `http` module for a small JSON API.
-- React and Vite for the browser interface.
-- `mysql2` is the only backend package. The client uses React and Vite packages.
+- `database/` — schema, sample data, queries, views, procedures, and verification SQL.
+- `public/` — the three browser files: `index.html`, `styles.css`, and `app.js`.
+- `server/` — the Node HTTP server and `mysql2` database connector.
 
-## Database setup on Windows
+## Run on Windows
 
-Open PowerShell as Administrator if the MySQL service is stopped. The service installed for this project is `MySQL80`:
+Start the MySQL service in PowerShell. If it is already running, continue to the next step:
 
 ```powershell
-Start-Service MySQL80
 Get-Service MySQL80
+# If stopped, run PowerShell as Administrator and use:
+Start-Service MySQL80
 ```
 
-From the project root, create the database once and apply the scripts in order:
+Configure the API once. Edit `server\.env` and set your local MySQL connection details; keep the file private and do not commit it.
 
 ```powershell
+Set-Location "C:\Users\ashmi\OneDrive\Documents\GitHub\hostel-finder\server"
+npm install
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
+# Edit .env: set DB_USER, DB_PASSWORD, and DB_NAME=hostel_finder.
+npm start
+```
+
+Open <http://localhost:3000>. The Node server serves both the website and its `/api` routes, so you only need one application terminal (plus MySQL running in the background).
+
+## Database setup
+
+From the project root, create the dedicated database once and load the scripts in order. The schema script drops and recreates the project's nine tables; back up data before applying it again.
+
+```powershell
+Set-Location "C:\Users\ashmi\OneDrive\Documents\GitHub\hostel-finder"
 mysql -u root -p -e "CREATE DATABASE hostel_finder CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"
 cmd.exe /c "mysql -u root -p hostel_finder < database\schema.sql"
 cmd.exe /c "mysql -u root -p hostel_finder < database\triggers_procedures.sql"
@@ -28,31 +43,15 @@ cmd.exe /c "mysql -u root -p hostel_finder < database\views.sql"
 cmd.exe /c "mysql -u root -p hostel_finder < database\seed.sql"
 ```
 
-Each `-p` prompts for the MySQL password; do not put it in the command. **`schema.sql` drops and recreates the nine project tables. Back up any existing data before reapplying it.** Run `database/verification.sql` once after seeding; it approves the test booking and auto-rejects the competing request when the last bed is taken.
+Each `-p` asks for the MySQL login password. Run `database/verification.sql` once after seeding; it changes the sample bookings to demonstrate approval and automatic rejection.
 
-## Run the API and client
+### Upgrade the previous hashed-password database
 
-Set up the server environment one time:
-
-```powershell
-Set-Location .\server
-npm install
-Copy-Item .env.example .env
-```
-
-Edit `server\.env` with your local database credentials. Then run `npm start` in one PowerShell terminal. In a second terminal:
-
-```powershell
-Set-Location .\client
-npm install
-npm run dev
-```
-
-Open the local URL printed by Vite, normally <http://localhost:5173>. The API defaults to <http://localhost:3000/api>. Keep both terminals open. Never put database credentials in the client or commit `.env`.
+For an existing database from the earlier version, back it up and run `database/migrate_plain_passwords.sql` once instead of reloading `schema.sql`. The migration preserves hostel and booking data, renames both password columns, and resets existing hashed accounts to the shared demo password because hashes cannot be reversed.
 
 ## Demo accounts
 
-All seeded accounts use `HostelDemo2026!`.
+All seeded accounts use the shared demo password `HostelDemo2026!`.
 
 | Role | Email |
 |---|---|
@@ -61,39 +60,23 @@ All seeded accounts use `HostelDemo2026!`.
 | Hostel owner | `meera@hostel-owner.invalid` |
 | Hostel owner | `rahul@hostel-owner.invalid` |
 
-The other seeded students use the same demo password. These sample accounts are for local demonstration only.
+The database stores passwords as plain text in `VARCHAR(255)` columns because this classroom project is meant to demonstrate the database schema. This is not safe for real accounts. Use only the fake demo accounts and never reuse personal passwords.
 
-## Database overview
+## Nine relations
 
-The schema has exactly the nine relations shown in the submitted report: `OWNER`, `HOSTEL`, `FACILITY`, `HOSTEL_FACILITY`, `ROOM`, `STUDENT`, `ROOMMATE_PREFERENCE`, `BOOKING`, and `REVIEW`. `HOSTEL_FACILITY` implements the hostel-to-facility many-to-many relationship. `BOOKING` connects students to rooms; `REVIEW` uses `(student_id, hostel_id)` so a student can leave one review per hostel.
+`OWNER`, `HOSTEL`, `FACILITY`, `HOSTEL_FACILITY`, `ROOM`, `STUDENT`, `ROOMMATE_PREFERENCE`, `BOOKING`, and `REVIEW` follow the submitted report. `HOSTEL_FACILITY` links hostels and facilities; `BOOKING` links students and rooms; `REVIEW` uses `(student_id, hostel_id)` as its key. Password is a normal `VARCHAR(255)` field in `OWNER` and `STUDENT`.
 
-The report lists `password`; the implementation calls it `password_hash` and stores salted scrypt hashes. It lists `available_beds`; booking procedures keep that count synchronized with approved bookings. The approval procedure uses a transaction and `SELECT ... FOR UPDATE` on the room row to prevent two owners from approving the last bed concurrently. Cancelling an approved booking makes its place available again.
+The report leaves some details open. This project uses hostel categories Boys/Girls/Co-ed; room categories Single/Double/Triple; booking states Pending/Approved/Rejected/Cancelled; and a simple compatibility view that equally weights smoking, sleep, and food while scoring cleanliness by distance on a 1–5 scale. Budget filters room rent. The approval procedure locks the room and maintains `available_beds` in a transaction. These choices are listed in `CASE_STUDY.md`.
 
-The report does not set exact booking status values, preference categories, or compatibility weights. The project uses Pending, Approved, Rejected, and Cancelled; three room types; the categories in `CASE_STUDY.md`; and a 100-point compatibility view that gives smoking, sleep, and food equal weight while scoring cleanliness by distance on a 1–5 scale. Budget is used for room search, not the roommate score. These are documented implementation assumptions.
+## Key files
 
-No bed, admin, audit-history, or database-session relation is added. Owners manage their own hostels. Login tokens are held in memory, expire after 12 hours, and are cleared at logout or API restart.
+- `database/schema.sql` — nine tables, keys, checks, foreign keys, and indexes.
+- `database/triggers_procedures.sql` — booking validation and transaction procedures.
+- `database/views.sql` — calculated roommate compatibility.
+- `database/seed.sql` — fake Indian college sample data and demo accounts.
+- `database/queries.sql` — examples for room filters, availability, compatibility, and bookings.
+- `database/verification.sql` — sample integrity checks.
+- `server/index.js` — serves static pages and the JSON API, with MySQL access through parameterized queries.
+- `public/index.html`, `public/styles.css`, `public/app.js` — plain, responsive, readable browser interface.
 
-## Main API routes
-
-- Accounts: `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET/PATCH /api/me`.
-- Search: `GET /api/hostels`, `GET /api/hostels/:id`, `GET /api/rooms`, `GET /api/facilities`.
-- Student: `GET/PUT /api/me/preferences`, `GET /api/me/compatibility`, `GET/POST /api/bookings`, `POST /api/bookings/:id/cancel`, `POST /api/reviews`.
-- Owner: `GET/POST /api/owner/hostels`, `PUT /api/owner/hostels/:id/facilities`, `POST /api/owner/rooms`, `GET /api/owner/bookings`, `POST /api/owner/bookings/:id/approve|reject`.
-
-All values are sent to MySQL as parameters. Search sort choices use a fixed allow-list. Owners can only change bookings and hostel data belonging to their own accounts.
-
-## Project files
-
-- `er_diagram.png`: the entity-relationship diagram from the submitted report.
-- `database/schema.sql`: the nine tables, keys, foreign keys, checks, and indexes.
-- `database/triggers_procedures.sql`: gender validation, status transition rules, and booking procedures.
-- `database/views.sql`: calculated roommate compatibility; scores are not stored.
-- `database/seed.sql`: three owners and hostels, rooms, facilities, twelve students and preferences, sample bookings, and reviews.
-- `database/queries.sql`: room filtering, availability, compatibility ranking, pending bookings, booking history, and ratings.
-- `database/verification.sql`: booking capacity, gender policy, and owner-scope checks.
-- `server/index.js`: Node HTTP API, authentication, validation, and database calls.
-- `client/src/App.jsx` and `client/src/styles.css`: simple responsive search, student, and owner screens.
-
-## Verification
-
-The implementation was checked by loading the SQL into MySQL, running the SQL verification script, checking the API routes, and building the React client. The key database checks cover last-bed double booking, competing requests, gender mismatch, and cross-owner booking decisions. The parameterized room search was also checked with an injection-shaped query.
+The UI supports room search and filtering, student profile/preferences/bookings/reviews, and owner hostel/room/facility management and booking decisions. Student roommate matches show the other student's phone number; hostel owners see an applicant's phone and email while a request is Pending. See `CASE_STUDY.md` for table relationships and implementation assumptions.

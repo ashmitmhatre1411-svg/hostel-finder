@@ -1,26 +1,28 @@
 # Project instructions
 
-This repository follows the nine-relation mini-project model documented in `CASE_STUDY.md`, based on the user's submitted DBMS report. Keep MySQL schema design and integrity rules as the main focus; keep the React interface simple and easy to explain.
+This is a DBMS mini-project based on the nine-relation model in `CASE_STUDY.md`. Keep MySQL design and integrity rules central, with a small interface that is easy to explain.
 
 ## Technology
 
-- Frontend: HTML, CSS, JavaScript, and React. Use Vite only as build tooling.
-- Backend: Node.js and the built-in `http` module. Do not add a server framework.
+- Frontend: plain HTML, CSS, and browser JavaScript. Do not use React, Vite, or a UI library.
+- Backend: Node.js using the built-in `http` module. Serve the static page and JSON API from one server.
 - Database: MySQL 8.x.
-- Allowed npm packages: `mysql2`, React, and React's Vite tooling. Use Node's built-in crypto `scrypt` and `--env-file`.
-- Do not use PHP, Python, Java, Firebase, MongoDB, TypeScript, Tailwind, or a UI library. Ask before adding another dependency.
-- The browser must not connect to MySQL. Keep credentials in the server environment, parameterize values, and never commit `.env`.
+- Only backend npm package: `mysql2`. Use Node's built-in `crypto` only for session tokens.
+- Do not use other frameworks or add packages without asking.
+- The browser must never connect directly to MySQL. Keep database credentials in `server/.env`, parameterize SQL, and never commit `.env`.
+- For this classroom-only version, account passwords are plain `VARCHAR(255)` values because that is the requested DBMS demonstration. Warn that real passwords must never be used.
 
-## Required database relations
+## Structure and database
 
-Implement the nine relations from `CASE_STUDY.md`: `OWNER`, `HOSTEL`, `FACILITY`, `HOSTEL_FACILITY`, `ROOM`, `STUDENT`, `ROOMMATE_PREFERENCE`, `BOOKING`, and `REVIEW`. Do not add bed, administrator, audit-history, or database-session tables without an updated user requirement. Password attributes must hold salted hashes.
-
-Keep relationship keys and checks in MySQL. Stored procedures must lock rooms while approving/cancelling bookings and maintain `ROOM.available_beds`. Calculate roommate compatibility in a view; do not store scores.
+- `database/`: schema, seed, views, procedures, verification, and query examples.
+- `public/`: `index.html`, `styles.css`, and `app.js`.
+- `server/`: the Node HTTP server and its `mysql2` package files.
+- Keep exactly the nine relations documented in `CASE_STUDY.md`.
+- Procedures lock rooms while approving/cancelling bookings and keep `ROOM.available_beds` synchronized. Calculate compatibility in a view.
 
 ## Working method
 
-1. Implement database schema, seed, procedures, view, and query examples first. Apply them only to the dedicated `hostel_finder` database; `schema.sql` recreates its tables.
-2. Then implement and verify the Node API, followed by a simple accessible React interface.
-3. Do not run Git commands; the user commits with GitHub Desktop.
-4. Keep code straightforward and commented enough for a college student to explain.
-5. Document which values and rules were not specified by the submitted report and how this project fills those gaps.
+1. Load and verify the SQL scripts against the dedicated `hostel_finder` database. `schema.sql` recreates its tables.
+2. Run the Node server, verify API/database access, and check the browser interface.
+3. Do not run Git commands; the user commits with GitHub Desktop unless the user explicitly asks otherwise.
+4. Keep code straightforward and document implementation assumptions in `CASE_STUDY.md` and `README.md`.
