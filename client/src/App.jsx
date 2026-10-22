@@ -1,164 +1,324 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const tokenKey = 'hostelFinderToken';
 
-function App() {
-  const [token, setToken] = useState(() => localStorage.getItem('hostelToken') || '');
+async function api(path, options = {}) {
+  const token = localStorage.getItem(tokenKey);
+  const response = await fetch(`${API}${path}`, {
+    ...options,
+    headers: {
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers
+    }
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || 'The request could not be completed');
+  return result;
+}
+
+const send = (method, body) => ({ method, body: JSON.stringify(body) });
+const displayDate = (value) => value ? new Date(`${value}T00:00:00`).toLocaleDateString() : '—';
+
+function Field({ label, name, type = 'text', required = false, defaultValue = '', children, ...props }) {
+  return <label className="field">{label}
+    {children || <input name={name} type={type} defaultValue={defaultValue} required={required} {...props} />}
+  </label>;
+}
+
+export default function App() {
   const [user, setUser] = useState(null);
-  const [page, setPage] = useState('browse');
-  const [accountTab, setAccountTab] = useState('login');
+  const [mode, setMode] = useState('browse');
+  const [authMode, setAuthMode] = useState('login');
+  const [accountKind, setAccountKind] = useState('student');
+  const [rooms, setRooms] = useState([]);
+  const [facilities, setFacilities] = useState([]);
+  const [filters, setFilters] = useState({ q: '', city: '', genderType: '', roomType: '', maxRent: '', facility: '', sort: 'rent' });
+  const [selected, setSelected] = useState(null);
+  const [studentData, setStudentData] = useState({ profile: null, preferences: null, bookings: [], matches: [] });
+  const [ownerData, setOwnerData] = useState({ hostels: [], bookings: [] });
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [hostels, setHostels] = useState([]);
-  const [rooms, setRooms] = useState([]);
-  const [requests, setRequests] = useState([]);
-  const [amenities, setAmenities] = useState([]);
-  const [filters, setFilters] = useState({ q: '', rentMin:'', rentMax: '', hostelId:'', roomType: '', floor:'', ac:'', bathroom:'', mess:'', available:true, amenities: [], sort: 'rent' });
-  const [profile, setProfile] = useState(null);
-  const [selectedRoom, setSelectedRoom] = useState(null);
-  const [compatibility, setCompatibility] = useState(null);
-  const [adminItems, setAdminItems] = useState([]);
-  const [occupancy, setOccupancy] = useState([]);
-  const [history, setHistory] = useState([]);
+  const [busy, setBusy] = useState(false);
 
-  async function api(path, options = {}) {
-    const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
-    if (token) headers.Authorization = `Bearer ${token}`;
-    const response = await fetch(`${API}${path}`, { ...options, headers });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
-    return data;
+  async function loadRooms(nextFilters = filters) {
+    const params = new URLSearchParams();
+    Object.entries(nextFilters).forEach(([key, value]) => { if (value) params.set(key, value); });
+    const data = await api(`/rooms?${params.toString()}`);
+    setRooms(data.items);
   }
-  function message(run) {
-    setError(''); setNotice(''); setLoading(true);
-    Promise.resolve().then(run).catch(e => setError(e.message)).finally(() => setLoading(false));
-  }
-  async function refreshBrowse() {
-    if(filters.rentMin!==''&&filters.rentMax!==''&&Number(filters.rentMin)>Number(filters.rentMax)){setRooms([]);setError('Minimum budget cannot exceed maximum budget.');return;}
-    const query = new URLSearchParams();
-    if (filters.q) query.set('q', filters.q);
-    if (filters.rentMin) query.set('rentMin', filters.rentMin);
-    if (filters.rentMax) query.set('rentMax', filters.rentMax);
-    if (filters.hostelId) query.set('hostelId', filters.hostelId);
-    if (filters.roomType) query.set('roomType', filters.roomType);
-    if (filters.floor!=='') query.set('floor', filters.floor);
-    if (filters.ac!=='') query.set('ac', filters.ac);
-    if (filters.bathroom!=='') query.set('bathroom', filters.bathroom);
-    if (filters.mess!=='') query.set('mess', filters.mess);
-    query.set('available',String(filters.available));
-    if (filters.amenities.length) query.set('amenityIds', filters.amenities.join(','));
-    if (filters.sort) query.set('sort', filters.sort);
-    const [h, r, a] = await Promise.all([api('/hostels'), api(`/rooms?${query}`), api('/amenities')]);
-    setHostels(h.items); setRooms(r.items); setAmenities(a.items);
-  }
-  async function refreshRequests() { const d = await api('/requests'); setRequests(d.items); }
-  async function refreshAdmin() {
-    if (user?.role === 'System Admin') {
-      const [h, a] = await Promise.all([api('/history'), api('/system/hostels')]);
-      setHistory(h.items); setHostels(a.items); setAdminItems([]); setOccupancy([]); return;
+
+  async function loadAccount(nextUser = user) {
+    if (!nextUser) return;
+    if (nextUser.kind === 'student') {
+      const [profile, preferences, bookings, matches] = await Promise.all([
+        api('/me'), api('/me/preferences'), api('/bookings'), api('/me/compatibility')
+      ]);
+      setStudentData({ profile: profile.user, preferences: preferences.preferences, bookings: bookings.items, matches: matches.items });
+    } else {
+      const [hostels, bookings] = await Promise.all([api('/owner/hostels'), api('/owner/bookings')]);
+      setOwnerData({ hostels: hostels.items, bookings: bookings.items });
     }
-    const [r, o, h] = await Promise.all([api('/admin/requests?status=Pending'), api('/admin/occupancy'), api('/history')]);
-    setAdminItems(r.items); setOccupancy(o.items); setHistory(h.items);
   }
-  async function loadMe() {
-    const d = await api('/me'); setUser(d.user); setProfile(d.user);
-  }
-  useEffect(() => { message(refreshBrowse); }, [filters]);
-  useEffect(() => {
-    if (!token) { setUser(null); return; }
-    message(async () => { await loadMe(); await refreshBrowse(); });
-  }, [token]);
-  useEffect(() => {
-    if (user?.kind === 'student' && page === 'requests') message(refreshRequests);
-    if (user?.kind === 'admin' && ['admin','occupancy','history','system'].includes(page)) message(refreshAdmin);
-  }, [page, user?.id]);
 
-  function signIn(e) {
-    e.preventDefault(); const data = Object.fromEntries(new FormData(e.currentTarget));
-    message(async () => { const d = await api('/auth/login', { method: 'POST', body: JSON.stringify(data) });
-      localStorage.setItem('hostelToken', d.token); setToken(d.token); setUser(d.user); setNotice('Signed in successfully.'); setPage(d.user.role==='System Admin'?'system':d.user.role?'admin':'browse'); });
+  useEffect(() => {
+    loadRooms().catch((reason) => setError(reason.message));
+    api('/facilities').then((data) => setFacilities(data.items)).catch((reason) => setError(reason.message));
+    if (localStorage.getItem(tokenKey)) {
+      api('/me').then((data) => { setUser(data.user); return loadAccount(data.user); })
+        .catch(() => { localStorage.removeItem(tokenKey); setUser(null); });
+    }
+  }, []);
+
+  async function run(action, successText = '') {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      await action();
+      if (successText) setNotice(successText);
+    } catch (reason) {
+      setError(reason.message || 'Something went wrong');
+    } finally { setBusy(false); }
   }
-  function register(e) {
-    e.preventDefault(); const d = Object.fromEntries(new FormData(e.currentTarget));
-    if (d.password !== d.confirmPassword) { setError('Passwords do not match.'); return; }
-    message(async () => { await api('/auth/register', { method: 'POST', body: JSON.stringify({ ...d, yearOfStudy: Number(d.yearOfStudy) }) }); setNotice('Account created. You can now sign in.'); setAccountTab('login'); setPage('account'); });
+
+  async function submitAuth(event) {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    await run(async () => {
+      if (authMode === 'register') {
+        await api('/auth/register', send('POST', { ...values, kind: accountKind }));
+      }
+      const result = await api('/auth/login', send('POST', {
+        kind: accountKind, email: values.email, password: values.password
+      }));
+      localStorage.setItem(tokenKey, result.token);
+      await loadAccount(result.user);
+      setUser(result.user);
+      setMode(accountKind === 'owner' ? 'owner' : 'account');
+    }, authMode === 'register' ? 'Account created and signed in.' : 'Signed in.');
   }
-  function signOut() { message(async () => { await api('/auth/logout', { method: 'POST' }); localStorage.removeItem('hostelToken'); setToken(''); setUser(null); setPage('browse'); }); }
-  function openRoom(room) {
-    message(async () => { const d = await api(`/rooms/${room.room_id}`); setSelectedRoom(d.room); setCompatibility(null); setPage('room');
-      if (user?.kind === 'student') setCompatibility(await api(`/rooms/${room.room_id}/compatibility`)); });
+
+  async function signOut() {
+    await run(async () => {
+      await api('/auth/logout', { method: 'POST' });
+      localStorage.removeItem(tokenKey); setUser(null); setMode('browse');
+      setStudentData({ profile: null, preferences: null, bookings: [], matches: [] });
+      setOwnerData({ hostels: [], bookings: [] });
+    }, 'Signed out.');
   }
-  function saveProfile(e) {
-    e.preventDefault(); const d = Object.fromEntries(new FormData(e.currentTarget));
-    if (Number(d.budgetMin) > Number(d.budgetMax)) { setError('Minimum budget cannot exceed maximum budget.'); return; }
-    message(async () => { await api('/me', { method: 'PATCH', body: JSON.stringify({ fullName: d.fullName, phone: d.phone, department: d.department, yearOfStudy: Number(d.yearOfStudy) }) });
-      await api('/me/preferences', { method: 'PUT', body: JSON.stringify({ sleepSchedule:d.sleepSchedule, cleanlinessLevel:Number(d.cleanlinessLevel), smokingHabit:d.smokingHabit, noiseTolerance:Number(d.noiseTolerance), studyHabit:d.studyHabit, budgetMin:Number(d.budgetMin), budgetMax:Number(d.budgetMax), preferredRoomType:d.preferredRoomType || null, moveInDate:d.moveInDate || null }) });
-      await loadMe(); setNotice('Profile and preferences saved.'); });
+
+  async function openHostel(hostelId) {
+    await run(async () => setSelected((await api(`/hostels/${hostelId}`))));
   }
-  function book(e) {
-    e.preventDefault(); const d = Object.fromEntries(new FormData(e.currentTarget));
-    message(async () => { await api('/requests', { method: 'POST', body: JSON.stringify({ bedId:Number(d.bedId), requestedMoveIn:d.moveInDate, studentNote:d.studentNote }) }); setNotice('Request submitted.'); setPage('requests'); });
+
+  async function bookRoom(event, roomId) {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    await run(async () => {
+      await api('/bookings', send('POST', { roomId, checkInDate: values.checkInDate }));
+      await loadRooms(); await loadAccount(user);
+    }, 'Booking request submitted. The owner must approve it.');
   }
-  function review(id, action) {
-    const remark = document.querySelector(`#remark-${id}`)?.value || '';
-    message(async () => { await api(`/admin/requests/${id}/${action}`, { method:'POST', body:JSON.stringify({ remark }) }); await refreshAdmin(); setNotice(`Request ${action === 'approve' ? 'approved' : 'rejected'}.`); });
+
+  async function saveProfile(event) {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    await run(async () => { await api('/me', send('PATCH', values)); await loadAccount(user); }, 'Profile saved.');
   }
-  const navItems = user?.role === 'System Admin' ? [['system','System admin']] : user?.role ? [['admin','Requests'],['occupancy','Occupancy'],['history','History']] : [['browse','Find a room'],['requests','My requests'],['profile','Profile']];
+
+  async function savePreferences(event) {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    await run(async () => { await api('/me/preferences', send('PUT', values)); await loadAccount(user); }, 'Roommate preferences saved.');
+  }
+
+  async function submitReview(event, hostelId) {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    await run(async () => { await api('/reviews', send('POST', { ...values, hostelId: Number(hostelId) })); await openHostel(hostelId); }, 'Review saved.');
+  }
+
+  async function cancelBooking(bookingId) {
+    await run(async () => { await api(`/bookings/${bookingId}/cancel`, { method: 'POST' }); await loadAccount(user); await loadRooms(); }, 'Booking cancelled.');
+  }
+
+  async function addHostel(event) {
+    event.preventDefault(); const form = event.currentTarget; const values = Object.fromEntries(new FormData(form));
+    await run(async () => { await api('/owner/hostels', send('POST', values)); await loadAccount(user); form.reset(); }, 'Hostel added.');
+  }
+
+  async function addRoom(event) {
+    event.preventDefault(); const form = event.currentTarget; const values = Object.fromEntries(new FormData(form));
+    await run(async () => { await api('/owner/rooms', send('POST', values)); await loadRooms(); await loadAccount(user); form.reset(); }, 'Room added.');
+  }
+
+  async function saveFacilities(event, hostelId) {
+    event.preventDefault(); const facilityIds = new FormData(event.currentTarget).getAll('facilityId');
+    await run(async () => { await api(`/owner/hostels/${hostelId}/facilities`, send('PUT', { facilityIds })); await loadAccount(user); }, 'Facilities saved.');
+  }
+
+  async function decideBooking(bookingId, action) {
+    await run(async () => { await api(`/owner/bookings/${bookingId}/${action}`, { method: 'POST' }); await loadAccount(user); await loadRooms(); }, `Booking ${action}d.`);
+  }
+
+  async function applyFilters(event) {
+    event.preventDefault(); const next = Object.fromEntries(new FormData(event.currentTarget));
+    setFilters(next); await run(() => loadRooms(next));
+  }
+
+  const fieldValue = (object, key, fallback = '') => object?.[key] ?? fallback;
+
   return <div className="app-shell">
-    <header className="topbar"><a className="brand" href="#browse" onClick={(e)=>{e.preventDefault();setPage('browse');}}><span className="brand-mark">HF</span><span>hostel<span className="brand-light">finder</span></span></a>
-      <nav aria-label="Main navigation">{navItems.map(([key,label])=><button key={key} className={`nav-link ${page===key?'active':''}`} onClick={()=>setPage(key)}>{label}</button>)}
-        {!user && <button className="nav-link" onClick={()=>setPage('account')}>Sign in</button>}</nav>
-      <div className="user-area">{user ? <><span className="user-name">{user.name}</span><button className="text-button" onClick={signOut}>Sign out</button></> : <button className="button button-dark small" onClick={()=>setPage('account')}>Sign in</button>}</div>
+    <header className="topbar">
+      <a className="brand" href="#top" onClick={() => { setMode('browse'); setSelected(null); }}>Hostel Finder</a>
+      <nav aria-label="Main navigation">
+        <button className={mode === 'browse' ? 'nav-button active' : 'nav-button'} onClick={() => { setMode('browse'); setSelected(null); }}>Browse rooms</button>
+        {user?.kind === 'student' && <button className={mode === 'account' ? 'nav-button active' : 'nav-button'} onClick={() => { setMode('account'); setSelected(null); }}>My account</button>}
+        {user?.kind === 'owner' && <button className={mode === 'owner' ? 'nav-button active' : 'nav-button'} onClick={() => { setMode('owner'); setSelected(null); }}>Owner dashboard</button>}
+      </nav>
+      <div className="header-account">
+        {user ? <><span>{user.name} · {user.kind}</span><button className="button secondary small" onClick={signOut} disabled={busy}>Sign out</button></>
+          : <button className="button primary small" onClick={() => { setMode('auth'); setAuthMode('login'); }}>Sign in</button>}
+      </div>
     </header>
-    <main className="main-content">
-      <div className="welcome-strip"><span className="eyebrow">STUDENT ACCOMMODATION · MUMBAI</span><span className="strip-note">Find a place that feels right for your next chapter.</span></div>
-      {notice && <div className="notice" role="status">{notice}<button onClick={()=>setNotice('')} aria-label="Dismiss message">×</button></div>}
-      {error && <div className="error-banner" role="alert">{error}<button onClick={()=>setError('')} aria-label="Dismiss error">×</button></div>}
-      {loading && <div className="loading-line" role="status">Loading…</div>}
-      {page==='browse' && <section>
-        <div className="hero"><div><p className="eyebrow">A BETTER WAY TO FIND YOUR STAY</p><h1>Your campus life<br/><em>starts at home.</em></h1><p className="hero-copy">Compare verified hostel listings, check what’s available, and make a confident choice.</p></div><div className="hero-note"><span className="sun-icon">✳</span><span>Thoughtful stays.<br/>Roommate-friendly living.</span></div></div>
-        <div className="search-panel"><div className="panel-title"><span className="eyebrow">EXPLORE ACCOMMODATION</span><span className="result-count">{rooms.length} rooms to explore</span></div>
-          <form className="filters" onSubmit={e=>{e.preventDefault();message(refreshBrowse);}}>
-            <label className="filter-field wide"><span>Hostel or area</span><input value={filters.q} onChange={e=>setFilters({...filters,q:e.target.value})} placeholder="Search names, areas…" /></label>
-            <label className="filter-field"><span>Hostel</span><select value={filters.hostelId} onChange={e=>setFilters({...filters,hostelId:e.target.value})}><option value="">Any hostel</option>{hostels.map(h=><option key={h.hostel_id} value={h.hostel_id}>{h.name}</option>)}</select></label>
-            <label className="filter-field"><span>Minimum budget (₹)</span><input type="number" min="0" value={filters.rentMin} onChange={e=>setFilters({...filters,rentMin:e.target.value})} placeholder="No minimum" /></label>
-            <label className="filter-field"><span>Monthly budget</span><select value={filters.rentMax} onChange={e=>setFilters({...filters,rentMax:e.target.value})}><option value="">Any budget</option><option value="5000">Up to ₹5,000</option><option value="8000">Up to ₹8,000</option><option value="12000">Up to ₹12,000</option></select></label>
-            <label className="filter-field"><span>Room type</span><select value={filters.roomType} onChange={e=>setFilters({...filters,roomType:e.target.value})}><option value="">Any room</option><option>Single</option><option>Double</option><option>Triple</option></select></label>
-            <label className="filter-field"><span>Floor</span><input type="number" value={filters.floor} onChange={e=>setFilters({...filters,floor:e.target.value})} placeholder="Any floor" /></label>
-            <label className="filter-field"><span>Sort by</span><select value={filters.sort} onChange={e=>setFilters({...filters,sort:e.target.value})}><option value="rent">Lowest rent</option><option value="rent_desc">Highest rent</option><option value="distance">Nearest campus</option></select></label>
+
+    <main id="top" className="page">
+      {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Dismiss message">×</button></div>}
+      {error && <div className="error" role="alert">{error}<button onClick={() => setError('')} aria-label="Dismiss error">×</button></div>}
+
+      {mode === 'auth' && <section className="panel auth-panel">
+        <div><p className="eyebrow">Simple hostel search</p><h1>{authMode === 'login' ? 'Sign in' : 'Create an account'}</h1>
+          <p>Students can search and book rooms. Owners can list hostels and review booking requests.</p></div>
+        <div className="form-card">
+          <div className="form-tabs">
+            <button className={authMode === 'login' ? 'selected' : ''} onClick={() => setAuthMode('login')}>Sign in</button>
+            <button className={authMode === 'register' ? 'selected' : ''} onClick={() => setAuthMode('register')}>Register</button>
+          </div>
+          <form className="form-grid" onSubmit={submitAuth}>
+            <Field label="I am a" name="kind" required>
+              <select value={accountKind} onChange={(event) => setAccountKind(event.target.value)}>
+                <option value="student">Student</option><option value="owner">Hostel owner</option>
+              </select>
+            </Field>
+            {authMode === 'register' && <>
+              <Field label="Full name" name="name" required />
+              <Field label="Phone" name="phone" type="tel" required />
+              {accountKind === 'student' && <>
+                <Field label="Gender" name="gender" required><select name="gender" defaultValue=""><option value="" disabled>Select gender</option><option>Male</option><option>Female</option><option>Non-binary</option><option>Undisclosed</option></select></Field>
+                <Field label="College" name="college" required />
+              </>}
+            </>}
+            <Field label="Email" name="email" type="email" required autoComplete="email" />
+            <Field label="Password" name="password" type="password" required autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} />
+            {authMode === 'register' && <p className="help">Use at least 10 characters, including a letter and a number.</p>}
+            <button className="button primary" disabled={busy}>{busy ? 'Please wait…' : authMode === 'login' ? 'Sign in' : 'Create account'}</button>
           </form>
-          <div className="amenity-filter"><span>Facilities</span><label className="check-chip"><input type="checkbox" checked={filters.ac==='true'} onChange={e=>setFilters({...filters,ac:e.target.checked?'true':''})}/>AC</label><label className="check-chip"><input type="checkbox" checked={filters.bathroom==='true'} onChange={e=>setFilters({...filters,bathroom:e.target.checked?'true':''})}/>Attached bathroom</label><label className="check-chip"><input type="checkbox" checked={filters.mess==='true'} onChange={e=>setFilters({...filters,mess:e.target.checked?'true':''})}/>Mess</label><label className="check-chip"><input type="checkbox" checked={filters.available} onChange={e=>setFilters({...filters,available:e.target.checked})}/>Show available beds only</label>{amenities.map(a=><label key={a.amenity_id} className="check-chip"><input type="checkbox" checked={filters.amenities.includes(a.amenity_id)} onChange={e=>setFilters({...filters, amenities:e.target.checked?[...filters.amenities,a.amenity_id]:filters.amenities.filter(x=>x!==a.amenity_id)})}/>{a.amenity_name}</label>)}</div>
         </div>
-        <div className="section-heading"><div><p className="eyebrow">ROOMS WITH OPEN BEDS</p><h2>Find your fit</h2></div><span className="muted">Prices shown per bed / month</span></div>
-        <div className="room-grid">{rooms.map((r,i)=><article className="room-card" key={r.room_id}><div className={`card-art art-${i%4}`}><span className="art-label">{r.hostel_type} HOSTEL</span><span className="availability">{r.available_beds} {r.available_beds===1?'bed':'beds'} open</span><span className="art-number">0{i+1}</span></div><div className="room-card-body"><div className="card-meta"><span>{r.room_type} room · Floor {r.floor_no}</span><span>{r.distance_km} km</span></div><h3>{r.hostel_name}</h3><p className="address">{r.address}</p><div className="feature-row">{r.has_ac? <span>❄ AC</span>:null}{r.has_attached_bath?<span>◉ Attached bath</span>:null}{r.has_mess?<span>⌂ Mess</span>:null}{(r.amenities||'').split(',').filter(Boolean).slice(0,2).map(a=><span key={a}>✦ {a}</span>)}</div><div className="card-bottom"><strong>₹{Number(r.rent_per_bed).toLocaleString('en-IN')}<small> / month</small></strong><button className="button button-outline" onClick={()=>openRoom(r)}>View room <span aria-hidden="true">↗</span></button></div></div></article>)}</div>
-        {!rooms.length && !loading && <div className="empty-state"><span className="empty-icon">⌕</span><h3>No rooms match those filters</h3><p>Try increasing your budget or clearing a filter.</p></div>}
-        <section className="hostel-summary"><div><p className="eyebrow">LISTINGS NEAR CAMPUS</p><h2>Places to call home</h2></div><div className="hostel-list">{hostels.map(h=><article key={h.hostel_id} className="hostel-row"><span className="hostel-type-dot"></span><div><strong>{h.name}</strong><p>{h.address} · {h.distance_km} km</p><span>{h.hostel_type} · {(h.amenities||'').split(',').filter(Boolean).join(' · ')}</span></div><b>{h.available_beds||0}<small> open beds</small></b></article>)}</div></section>
       </section>}
-      {page==='account' && <section className="account-layout"><div className="account-intro"><p className="eyebrow">WELCOME TO A BETTER STAY</p><h1>Make room<br/><em>for what’s next.</em></h1><p>Sign in to manage your requests, find a compatible room, and keep your plans in one place.</p></div><div className="account-card"><div className="tabs"><button className={accountTab==='login'?'active':''} onClick={()=>setAccountTab('login')}>Sign in</button><button className={accountTab==='register'?'active':''} onClick={()=>setAccountTab('register')}>Create account</button></div><form hidden={accountTab!=='login'} onSubmit={signIn} className="form-stack"><h2>Good to see you</h2><label>Email<input name="email" type="email" autoComplete="email" required /></label><label>Password<input name="password" type="password" autoComplete="current-password" required /></label><button className="button button-dark" disabled={loading}>Sign in <span>→</span></button></form><form hidden={accountTab!=='register'} onSubmit={register} className="form-stack"><h2>Create your account</h2><label>Full name<input name="fullName" autoComplete="name" required /></label><label>College roll number<input name="rollNo" required /></label><div className="two-col"><label>Email<input name="email" type="email" required /></label><label>Phone<input name="phone" type="tel" required /></label></div><div className="two-col"><label>Gender<select name="gender" required><option value="">Choose…</option><option>Male</option><option>Female</option><option>Non-binary</option><option>Undisclosed</option></select></label><label>Year of study<input name="yearOfStudy" type="number" min="1" max="8" required /></label></div><label>Department<input name="department" required /></label><label>Password<input name="password" type="password" minLength="10" autoComplete="new-password" required /></label><label>Confirm password<input name="confirmPassword" type="password" minLength="10" required /></label><button className="button button-dark" disabled={loading}>Create account <span>→</span></button></form></div></section>}
-      {page==='room' && selectedRoom && <section className="detail-layout"><button className="back-link" onClick={()=>setPage('browse')}>← Back to results</button><div className="detail-cover"><span className="eyebrow">{selectedRoom.hostel_type.toUpperCase()} HOSTEL</span><h1>{selectedRoom.hostel_name}</h1><p>{selectedRoom.address}</p></div><div className="detail-columns"><div className="detail-main"><div className="detail-title"><div><p className="eyebrow">ROOM {selectedRoom.room_number}</p><h2>{selectedRoom.room_type} room · Floor {selectedRoom.floor_no}</h2></div><strong>₹{Number(selectedRoom.rent_per_bed).toLocaleString('en-IN')}<small> / bed / month</small></strong></div><p>Choose an available bed and request a move-in date. The hostel team will review your request.</p><h3>Bed availability</h3><div className="bed-list">{(selectedRoom.beds||[]).map(b=><span key={b.bedId} className={`bed-pill ${b.status.toLowerCase()}`}>{b.label} · {b.status}</span>)}</div>{user?.kind==='student'?<form className="form-stack booking-form" onSubmit={book}><h3>Request a bed</h3><label>Available bed<select name="bedId" required defaultValue=""><option value="" disabled>Select a bed</option>{(selectedRoom.beds||[]).filter(b=>b.status==='Available').map(b=><option key={b.bedId} value={b.bedId}>{b.label}</option>)}</select></label><label>Move-in date<input name="moveInDate" type="date" min={new Date().toISOString().slice(0,10)} required /></label><label>Note for the hostel (optional)<textarea name="studentNote" rows="3" maxLength="1000" /></label><button className="button button-dark">Submit request <span>→</span></button></form>:<div className="callout">Sign in as a student to request a bed.</div>}</div><aside className="detail-aside"><div className="aside-card"><h3>Room features</h3><p>{selectedRoom.has_ac?'Air conditioning':'No air conditioning'}</p><p>{selectedRoom.has_attached_bath?'Attached bathroom':'Shared bathroom'}</p><p>{selectedRoom.has_mess?'Mess facility available':'Mess not included'}</p><p>{selectedRoom.available_beds} beds available now</p></div>{compatibility&&<div className="aside-card"><h3>Roommate fit</h3>{compatibility.averageCompatibilityPercent===null?<p>No current occupants to compare with.</p>:<><strong className="score">{compatibility.averageCompatibilityPercent}%</strong><p>Average match with current occupants</p>{compatibility.occupants.map((o,index)=><div className="occupant" key={index}><strong>{o.compatibilityPercent}% match</strong><span>{o.sleepSchedule} sleeper · Cleanliness {o.cleanlinessLevel} · {o.smokingHabit} · {o.studyHabit}</span></div>)}</>}</div>}</aside></div></section>}
-      {page==='profile' && user?.kind==='student' && <section className="content-section"><div className="section-heading"><div><p className="eyebrow">YOUR ACCOUNT</p><h2>Profile & preferences</h2></div></div>{profile&&<form className="profile-form form-stack" onSubmit={saveProfile}><h3>Personal details</h3><div className="two-col"><label>Full name<input name="fullName" defaultValue={profile.full_name||profile.name} required /></label><label>Phone<input name="phone" defaultValue={profile.phone} required /></label></div><div className="two-col"><label>Department<input name="department" defaultValue={profile.department} required /></label><label>Year of study<input name="yearOfStudy" type="number" min="1" max="8" defaultValue={profile.year_of_study} required /></label></div><p className="muted">Roll number and email are fixed after registration.</p><h3>Lifestyle preferences</h3><div className="two-col"><label>Sleep schedule<select name="sleepSchedule" defaultValue={profile.preferences?.sleep_schedule||'Flexible'}><option>Early</option><option>Flexible</option><option>Late</option></select></label><label>Cleanliness level (1–5)<input name="cleanlinessLevel" type="number" min="1" max="5" defaultValue={profile.preferences?.cleanliness_level||3} required /></label></div><div className="two-col"><label>Smoking preference<select name="smokingHabit" defaultValue={profile.preferences?.smoking_habit||'Non-smoker'}><option>Non-smoker</option><option>Occasional</option><option>Smoker</option></select></label><label>Noise tolerance (1–5)<input name="noiseTolerance" type="number" min="1" max="5" defaultValue={profile.preferences?.noise_tolerance||3} required /></label></div><div className="two-col"><label>Study habit<select name="studyHabit" defaultValue={profile.preferences?.study_habit||'Flexible'}><option>Daily</option><option>Flexible</option><option>Exam-focused</option></select></label><label>Preferred room<select name="preferredRoomType" defaultValue={profile.preferences?.preferred_room_type||''}><option value="">No preference</option><option>Single</option><option>Double</option><option>Triple</option></select></label></div><div className="two-col"><label>Minimum budget (₹ / month)<input name="budgetMin" type="number" min="0" defaultValue={profile.preferences?.budget_min||0} required /></label><label>Maximum budget (₹ / month)<input name="budgetMax" type="number" min="0" defaultValue={profile.preferences?.budget_max||10000} required /></label></div><label>Preferred move-in date<input name="moveInDate" type="date" defaultValue={profile.preferences?.move_in_date||''}/></label><button className="button button-dark">Save profile and preferences</button></form>}</section>}
-      {page==='requests' && <section className="content-section"><div className="section-heading"><div><p className="eyebrow">YOUR APPLICATIONS</p><h2>My requests</h2></div></div>{requests.length?<div className="table-wrap"><table><thead><tr><th>Hostel / room</th><th>Move-in</th><th>Status</th><th>Requested</th><th>History</th><th></th></tr></thead><tbody>{requests.map(r=><tr key={r.request_id}><td><strong>{r.hostel_name}</strong><small>{r.room_type} · Room {r.room_number} · Bed {r.bed_label}</small></td><td>{r.requested_move_in}</td><td><span className={`status ${r.status.toLowerCase()}`}>{r.status}</span>{r.admin_remark&&<small>{r.admin_remark}</small>}</td><td>{new Date(r.requested_at).toLocaleDateString()}</td><td><RequestHistory id={r.request_id} api={api}/></td><td>{r.status==='Pending'&&<button className="text-button danger" onClick={()=>message(async()=>{await api(`/requests/${r.request_id}/cancel`,{method:'POST'});await refreshRequests();})}>Cancel</button>}</td></tr>)}</tbody></table></div>:<div className="empty-state"><span className="empty-icon">▤</span><h3>No booking requests yet</h3><p>Browse available rooms and send a request when you find one you like.</p><button className="button button-dark" onClick={()=>setPage('browse')}>Browse rooms</button></div>}</section>}
-      {page==='admin' && user?.role==='Hostel Admin' && <section className="content-section"><div className="section-heading"><div><p className="eyebrow">HOSTEL ADMINISTRATION</p><h2>Requests to review</h2></div></div>{adminItems.length?<div className="request-grid">{adminItems.map(r=><article className="request-card" key={r.request_id}><div className="request-card-head"><span className="status pending">Pending</span><span>#{r.request_id}</span></div><h3>{r.student_name}</h3><p>{r.department} · {r.gender}</p><div className="request-room">Room {r.room_number}, {r.room_type}<strong>Bed {r.bed_label}</strong></div><p>Move-in: {r.requested_move_in}</p>{r.student_note&&<blockquote>{r.student_note}</blockquote>}{r.best_occupant_match!==null&&r.best_occupant_match!==undefined&&<p>Best current occupant match: <strong>{r.best_occupant_match}%</strong></p>}<label>Decision remark<textarea id={`remark-${r.request_id}`} rows="2" maxLength="1000" placeholder="Optional note for the student"/></label><div className="action-row"><button className="button button-dark" onClick={()=>review(r.request_id,'approve')}>Approve</button><button className="button button-outline" onClick={()=>review(r.request_id,'reject')}>Reject</button></div></article>)}</div>:<div className="empty-state"><span className="empty-icon">✓</span><h3>All caught up</h3><p>There are no pending requests for your hostel.</p></div>}<div className="admin-tools"><div className="section-heading"><div><p className="eyebrow">LISTING MANAGEMENT</p><h2>Manage rooms & beds</h2></div></div><RoomForm api={api} onSaved={()=>message(refreshAdmin)}/><RoomAdminList api={api}/><BedStatusForm api={api} onSaved={()=>message(refreshAdmin)}/><AmenityLinkForm api={api} onSaved={()=>message(refreshAdmin)} amenities={amenities}/></div></section>}
-      {page==='occupancy' && user?.role && <section className="content-section"><div className="section-heading"><div><p className="eyebrow">LIVE AVAILABILITY</p><h2>Occupancy by room</h2></div></div><div className="room-grid">{occupancy.map(o=><article className="occupancy-card" key={o.room_id}><span className="eyebrow">ROOM {o.room_number}</span><h3>{o.room_type}</h3><div className="occupancy-meter"><span style={{width:`${o.total_beds?100*o.occupied_beds/o.total_beds:0}%`}}/></div><p>{o.occupied_beds} occupied · {o.available_beds} available · {o.total_beds} total</p></article>)}</div><div className="admin-tools"><div className="section-heading"><div><p className="eyebrow">ADD A ROOM</p><h2>New room</h2></div></div><RoomForm api={api} onSaved={()=>message(refreshAdmin)}/></div></section>}
-      {page==='history' && user?.role && <section className="content-section"><div className="section-heading"><div><p className="eyebrow">AUDIT TRAIL</p><h2>Booking history</h2></div></div><HistoryTable items={history} onEnd={id=>message(async()=>{await api(`/admin/allocations/${id}/end`,{method:'POST',body:JSON.stringify({endDate:new Date().toISOString().slice(0,10)})});await refreshAdmin();setNotice('Allocation closed and bed released.');})}/></section>}
-      {page==='system' && user?.role==='System Admin' && <section className="content-section"><div className="section-heading"><div><p className="eyebrow">SYSTEM SETTINGS</p><h2>Hostels & accounts</h2></div></div><SystemForms api={api} onSaved={()=>message(refreshAdmin)}/><div className="section-heading"><div><p className="eyebrow">BOOKING OVERSIGHT</p><h2>Recent booking history</h2></div></div><HistoryTable items={history}/></section>}
-      {!token && ['requests','profile','admin','occupancy','history','system'].includes(page) && <div className="empty-state"><span className="empty-icon">⌑</span><h3>Sign in to continue</h3><p>Your account gives you access to your requests and management tools.</p><button className="button button-dark" onClick={()=>setPage('account')}>Sign in</button></div>}
+
+      {mode === 'browse' && <>
+        <section className="intro">
+          <p className="eyebrow">Student Accommodation & Roommate Finder</p>
+          <h1>Find a room that fits your budget.</h1>
+          <p>Compare rooms, check availability and hostel facilities, then send a booking request.</p>
+        </section>
+        <form className="panel filters" onSubmit={applyFilters}>
+          <Field label="Search hostels or city" name="q" defaultValue={filters.q} placeholder="Mumbai, Andheri…" />
+          <Field label="City" name="city" defaultValue={filters.city} placeholder="Any city" />
+          <Field label="Hostel type" name="genderType"><select name="genderType" defaultValue={filters.genderType}><option value="">Any type</option><option>Boys</option><option>Girls</option><option>Co-ed</option></select></Field>
+          <Field label="Room type" name="roomType"><select name="roomType" defaultValue={filters.roomType}><option value="">Any type</option><option>Single</option><option>Double</option><option>Triple</option></select></Field>
+          <Field label="Maximum monthly rent" name="maxRent" type="number" min="0" defaultValue={filters.maxRent} placeholder="₹" />
+          <Field label="Facility" name="facility"><select name="facility" defaultValue={filters.facility}><option value="">Any facility</option>{facilities.map((item) => <option key={item.facility_id}>{item.facility_name}</option>)}</select></Field>
+          <Field label="Sort by" name="sort"><select name="sort" defaultValue={filters.sort}><option value="rent">Rent: low to high</option><option value="rent-desc">Rent: high to low</option></select></Field>
+          <button className="button primary" disabled={busy}>Search rooms</button>
+        </form>
+
+        {selected ? <section className="panel detail-panel">
+          <button className="text-button" onClick={() => setSelected(null)}>← Back to rooms</button>
+          <h2>{selected.hostel.name}</h2><p>{selected.hostel.address}, {selected.hostel.city} · {selected.hostel.gender_type}</p>
+          <p><strong>Facilities:</strong> {selected.hostel.facilities || 'None listed'}</p>
+          <h3>Rooms</h3>
+          <div className="table-scroll"><table><thead><tr><th>Type</th><th>Capacity</th><th>Available</th><th>Monthly rent</th><th>Request</th></tr></thead>
+            <tbody>{selected.rooms.map((room) => <tr key={room.room_id}><td>{room.room_type}</td><td>{room.capacity}</td><td>{room.available_beds}</td><td>₹{room.rent_per_month.toLocaleString('en-IN')}</td><td>
+              {user?.kind === 'student' && room.available_beds > 0 ? <form className="inline-book" onSubmit={(event) => bookRoom(event, room.room_id)}><input name="checkInDate" type="date" min={new Date().toISOString().slice(0,10)} required aria-label="Check-in date" /><button className="button primary small" disabled={busy}>Request</button></form>
+                : !user ? <button className="text-button" onClick={() => { setMode('auth'); setAuthMode('login'); }}>Sign in to request</button> : <span>Full</span>}
+            </td></tr>)}</tbody></table></div>
+          <h3>Reviews</h3>
+          {selected.reviews.length ? <ul className="review-list">{selected.reviews.map((review, index) => <li key={`${review.student_name}-${index}`}><strong>{review.student_name}</strong> · {review.rating}/5<p>{review.comment || 'No comment'}</p></li>)}</ul> : <p>No reviews yet.</p>}
+          {user?.kind === 'student' && <form className="form-grid review-form" onSubmit={(event) => submitReview(event, selected.hostel.hostel_id)}>
+            <label className="field">Your rating<select name="rating" defaultValue="5"><option>5</option><option>4</option><option>3</option><option>2</option><option>1</option></select></label>
+            <label className="field">Comment<textarea name="comment" rows="2" maxLength="1000" /></label>
+            <button className="button secondary" disabled={busy}>Save review</button>
+          </form>}
+        </section> : <section className="results">
+          <div className="section-head"><h2>Available rooms</h2><span>{rooms.length} results</span></div>
+          {rooms.length ? <div className="table-scroll"><table><thead><tr><th>Hostel</th><th>City</th><th>Type</th><th>Available</th><th>Rent / month</th><th>Facilities</th><th /></tr></thead>
+            <tbody>{rooms.map((room) => <tr key={room.room_id}><td><strong>{room.hostel_name}</strong><small>{room.gender_type}</small></td><td>{room.city}</td><td>{room.room_type}</td><td>{room.available_beds} / {room.capacity}</td><td>₹{room.rent_per_month.toLocaleString('en-IN')}</td><td>{room.facilities || '—'}</td><td><button className="text-button" onClick={() => openHostel(room.hostel_id)}>View hostel</button></td></tr>)}</tbody></table></div>
+            : <div className="empty"><h3>No rooms match those filters</h3><p>Try a different city, rent or facility.</p></div>}
+        </section>}
+      </>}
+
+      {mode === 'account' && user?.kind === 'student' && <section className="account-grid">
+        <div className="panel"><h1>Student account</h1><form className="form-grid" onSubmit={saveProfile}>
+          <Field label="Name" name="name" defaultValue={fieldValue(studentData.profile,'name')} required />
+          <Field label="Email" name="email" type="email" defaultValue={fieldValue(studentData.profile,'email')} disabled />
+          <Field label="Phone" name="phone" type="tel" defaultValue={fieldValue(studentData.profile,'phone')} required />
+          <Field label="College" name="college" defaultValue={fieldValue(studentData.profile,'college')} required />
+          <Field label="Gender" name="gender"><select name="gender" defaultValue={fieldValue(studentData.profile,'gender','Male')}><option>Male</option><option>Female</option><option>Non-binary</option><option>Undisclosed</option></select></Field>
+          <button className="button primary" disabled={busy}>Save profile</button>
+        </form></div>
+        <div className="panel"><h2>Roommate preferences</h2><form className="form-grid" onSubmit={savePreferences}>
+          <Field label="Smoking" name="smoking"><select name="smoking" defaultValue={fieldValue(studentData.preferences,'smoking','Non-smoker')}><option>Non-smoker</option><option>Occasional</option><option>Smoker</option></select></Field>
+          <Field label="Sleep schedule" name="sleepSchedule"><select name="sleepSchedule" defaultValue={fieldValue(studentData.preferences,'sleep_schedule','Flexible')}><option>Early</option><option>Flexible</option><option>Late</option></select></Field>
+          <Field label="Food preference" name="foodType"><select name="foodType" defaultValue={fieldValue(studentData.preferences,'food_type','Vegetarian')}><option>Vegetarian</option><option>Eggetarian</option><option>Non-vegetarian</option><option>Vegan</option></select></Field>
+          <Field label="Cleanliness (1–5)" name="cleanliness" type="number" min="1" max="5" defaultValue={fieldValue(studentData.preferences,'cleanliness',3)} required />
+          <Field label="Maximum monthly budget (₹)" name="maxBudget" type="number" min="0" defaultValue={fieldValue(studentData.preferences,'max_budget','7000')} required />
+          <button className="button primary" disabled={busy}>Save preferences</button>
+        </form></div>
+        <div className="panel wide"><div className="section-head"><h2>My bookings</h2><button className="text-button" onClick={() => run(() => loadAccount(user))}>Refresh</button></div>
+          {studentData.bookings.length ? <div className="table-scroll"><table><thead><tr><th>Hostel</th><th>Room</th><th>Check-in</th><th>Status</th><th /></tr></thead><tbody>
+            {studentData.bookings.map((booking) => <tr key={booking.booking_id}><td>{booking.hostel_name}<small>{booking.city}</small></td><td>{booking.room_type} · ₹{booking.rent_per_month.toLocaleString('en-IN')}/month</td><td>{displayDate(booking.check_in_date)}</td><td><span className={`status ${booking.status.toLowerCase()}`}>{booking.status}</span></td><td>{['Pending','Approved'].includes(booking.status) && <button className="text-button danger" onClick={() => cancelBooking(booking.booking_id)}>Cancel</button>}</td></tr>)}
+          </tbody></table></div> : <p className="empty-message">No booking requests yet. Browse rooms to get started.</p>}
+        </div>
+        <div className="panel wide"><h2>Roommate matches</h2>
+          {studentData.matches.length ? <div className="table-scroll"><table><thead><tr><th>Student</th><th>College</th><th>Compatibility</th><th>Lifestyle</th></tr></thead><tbody>{studentData.matches.map((match, index) => <tr key={`${match.name}-${index}`}><td>{match.name}</td><td>{match.college}</td><td><strong>{match.compatibility_percent}%</strong></td><td>{match.smoking}, {match.sleep_schedule}, {match.food_type}, cleanliness {match.cleanliness}/5</td></tr>)}</tbody></table></div>
+            : <p className="empty-message">Save your roommate preferences to see matches.</p>}
+        </div>
+      </section>}
+
+      {mode === 'owner' && user?.kind === 'owner' && <section className="owner-view">
+        <div className="intro compact"><p className="eyebrow">Owner tools</p><h1>Manage your hostels</h1><p>Add a property, list its rooms and review student requests.</p></div>
+        <div className="account-grid">
+          <div className="panel"><h2>Add a hostel</h2><form className="form-grid" onSubmit={addHostel}>
+            <Field label="Hostel name" name="name" required /><Field label="Address" name="address" required />
+            <Field label="City" name="city" required />
+            <Field label="Hostel type" name="genderType"><select name="genderType" defaultValue="Co-ed"><option>Boys</option><option>Girls</option><option>Co-ed</option></select></Field>
+            <button className="button primary" disabled={busy}>Add hostel</button>
+          </form></div>
+          <div className="panel"><h2>Add a room</h2><form className="form-grid" onSubmit={addRoom}>
+            <Field label="Hostel" name="hostelId" required><select name="hostelId" required defaultValue=""><option value="" disabled>Select hostel</option>{ownerData.hostels.map((hostel) => <option key={hostel.hostel_id} value={hostel.hostel_id}>{hostel.name}</option>)}</select></Field>
+            <Field label="Room type" name="roomType"><select name="roomType" defaultValue="Double"><option>Single</option><option>Double</option><option>Triple</option></select></Field>
+            <Field label="Capacity" name="capacity" type="number" min="1" max="50" defaultValue="2" required />
+            <Field label="Monthly rent (₹)" name="rentPerMonth" type="number" min="1" required />
+            <button className="button primary" disabled={busy || !ownerData.hostels.length}>Add room</button>
+          </form></div>
+        </div>
+        <section className="panel"><h2>Your hostels and facilities</h2>
+          {ownerData.hostels.length ? <div className="owner-hostels">{ownerData.hostels.map((hostel) => <form key={hostel.hostel_id} className="facility-row" onSubmit={(event) => saveFacilities(event, hostel.hostel_id)}>
+            <div><strong>{hostel.name}</strong><small>{hostel.address}, {hostel.city} · {hostel.gender_type}</small><small>Current facilities: {hostel.facilities || 'None'}</small></div>
+            <fieldset><legend>Facilities</legend>{facilities.map((facility) => <label key={facility.facility_id} className="check-label"><input type="checkbox" name="facilityId" value={facility.facility_id} defaultChecked={hostel.facilities?.split(', ').includes(facility.facility_name)} />{facility.facility_name}</label>)}</fieldset>
+            <button className="button secondary small" disabled={busy}>Save facilities</button>
+          </form>)}</div> : <p className="empty-message">Add a hostel to begin listing rooms.</p>}
+        </section>
+        <section className="panel"><div className="section-head"><h2>Booking requests</h2><button className="text-button" onClick={() => run(() => loadAccount(user))}>Refresh</button></div>
+          {ownerData.bookings.length ? <div className="table-scroll"><table><thead><tr><th>Student</th><th>Hostel / room</th><th>Check-in</th><th>Status</th><th>Decision</th></tr></thead><tbody>
+            {ownerData.bookings.map((booking) => <tr key={booking.booking_id}><td>{booking.student_name}<small>{booking.gender} · {booking.college}</small></td><td>{booking.hostel_name}<small>{booking.room_type} · {booking.capacity} beds</small></td><td>{displayDate(booking.check_in_date)}</td><td><span className={`status ${booking.status.toLowerCase()}`}>{booking.status}</span></td><td>{booking.status === 'Pending' ? <div className="actions"><button className="button primary small" onClick={() => decideBooking(booking.booking_id,'approve')}>Approve</button><button className="button secondary small" onClick={() => decideBooking(booking.booking_id,'reject')}>Reject</button></div> : '—'}</td></tr>)}
+          </tbody></table></div> : <p className="empty-message">No booking requests for your hostels.</p>}
+        </section>
+      </section>}
+
+      {user && mode !== 'browse' && ((user.kind === 'student' && mode !== 'account') || (user.kind === 'owner' && mode !== 'owner')) && <div className="panel"><p>Choose the section from the navigation above.</p></div>}
     </main>
-    <footer><a className="brand" href="#browse" onClick={e=>{e.preventDefault();setPage('browse');}}>HF · hostel finder</a><span>Made for better campus living</span><span>© 2026 · Student Accommodation</span></footer>
+    <footer><span>Hostel Finder · MySQL DBMS mini project</span><span>Search · Book · Review</span></footer>
   </div>;
 }
-
-function RequestHistory({id, api}) {
-  const [open, setOpen] = useState(false); const [rows, setRows] = useState([]); const [error, setError] = useState('');
-  async function toggle() { const next=!open; setOpen(next); if(next&&!rows.length) try { setRows((await api(`/requests/${id}`)).history); } catch(e){setError(e.message);} }
-  return <div className="history-expander"><button className="text-button" onClick={toggle} aria-expanded={open}>{open?'Hide':'View'} history</button>{open&&<div className="history-items">{error||rows.map((r,i)=><span key={i}>{r.old_status?`${r.old_status} → `:''}{r.new_status} · {new Date(r.changed_at).toLocaleString()}</span>)}</div>}</div>;
-}
-function RoomForm({api,onSaved}) { return <form className="management-form" onSubmit={async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));try{await api('/admin/rooms',{method:'POST',body:JSON.stringify({...d,floorNo:Number(d.floorNo),totalBeds:Number(d.totalBeds),rentPerBed:Number(d.rentPerBed),hasAc:e.currentTarget.hasAc.checked,hasAttachedBath:e.currentTarget.hasAttachedBath.checked,hasMess:e.currentTarget.hasMess.checked})});e.currentTarget.reset();onSaved();}catch(err){alert(err.message);}}}><h3>Add a room</h3><div className="management-fields"><label>Room number<input name="roomNumber" required/></label><label>Floor<input name="floorNo" type="number" defaultValue="0"/></label><label>Room type<select name="roomType"><option>Single</option><option>Double</option><option>Triple</option></select></label><label>Number of beds<input name="totalBeds" type="number" min="1" max="12" required/></label><label>Rent per bed<input name="rentPerBed" type="number" min="1" required/></label></div><div className="inline-checks"><label><input type="checkbox" name="hasAc"/> AC</label><label><input type="checkbox" name="hasAttachedBath"/> Attached bathroom</label><label><input type="checkbox" name="hasMess"/> Mess</label></div><button className="button button-dark">Add room and beds</button></form>; }
-function RoomAdminList({api}) { const [rows,setRows]=useState([]);const [error,setError]=useState('');useEffect(()=>{api('/admin/rooms').then(d=>setRows(d.items)).catch(e=>setError(e.message));},[]);return <div className="table-wrap"><table><thead><tr><th>Room</th><th>Type</th><th>Bed IDs / status</th><th>Active</th></tr></thead><tbody>{rows.map(r=>{const beds=typeof r.beds==='string'?JSON.parse(r.beds):r.beds;return <tr key={r.room_id}><td>{r.room_number} <small>ID {r.room_id}</small></td><td>{r.room_type}</td><td>{(beds||[]).map(b=>`#${b.bedId} ${b.label}: ${b.status}`).join(' · ')}</td><td>{r.is_active?'Yes':'No'}</td></tr>;})}</tbody></table>{error&&<p className="error-banner">{error}</p>}</div>; }
-function BedStatusForm({api,onSaved}) { return <form className="management-form" onSubmit={async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));try{await api(`/admin/beds/${d.bedId}`,{method:'PATCH',body:JSON.stringify({status:d.status})});e.currentTarget.reset();onSaved();}catch(err){alert(err.message);}}}><h3>Update bed availability</h3><div className="management-fields"><label>Bed ID<input name="bedId" type="number" min="1" required/></label><label>New status<select name="status"><option>Available</option><option>Maintenance</option></select></label></div><button className="button button-outline">Save bed status</button></form>; }
-function AmenityLinkForm({api,onSaved,amenities}) { return <form className="management-form" onSubmit={async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));try{await api('/admin/hostel-amenities',{method:'POST',body:JSON.stringify({amenityId:Number(d.amenityId)})});onSaved();}catch(err){alert(err.message);}}}><h3>Add a hostel amenity</h3><div className="management-fields"><label>Facility<select name="amenityId" required>{amenities.map(a=><option key={a.amenity_id} value={a.amenity_id}>{a.amenity_name}</option>)}</select></label></div><button className="button button-outline">Add facility</button></form>; }
-function SystemForms({api,onSaved}) { return <div className="system-form-grid"><form className="management-form form-stack" onSubmit={async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));try{await api('/system/hostels',{method:'POST',body:JSON.stringify({...d,distanceKm:Number(d.distanceKm)})});e.currentTarget.reset();onSaved();}catch(err){alert(err.message);}}}><h3>Create a hostel</h3><label>Name<input name="name" required/></label><label>Hostel type<select name="hostelType"><option>Boys</option><option>Girls</option><option>Co-ed</option></select></label><label>Address<input name="address" required/></label><label>Distance from campus (km)<input name="distanceKm" type="number" min="0" step="0.1" required/></label><label>Contact number<input name="contactNo" required/></label><label>Rules<textarea name="rules" rows="3" required/></label><button className="button button-dark">Create hostel</button></form><form className="management-form form-stack" onSubmit={async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));try{await api('/system/admins',{method:'POST',body:JSON.stringify({...d,hostelId:d.hostelId?Number(d.hostelId):null})});e.currentTarget.reset();onSaved();}catch(err){alert(err.message);}}}><h3>Create an admin account</h3><label>Name<input name="name" required/></label><label>Email<input name="email" type="email" required/></label><label>Role<select name="role"><option>Hostel Admin</option><option>System Admin</option></select></label><label>Hostel ID (for hostel admin)<input name="hostelId" type="number" min="1"/></label><label>Temporary password<input name="password" type="password" minLength="10" required/></label><button className="button button-dark">Create admin</button></form><form className="management-form form-stack" onSubmit={async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));try{await api('/system/amenities',{method:'POST',body:JSON.stringify({name:d.name})});e.currentTarget.reset();onSaved();}catch(err){alert(err.message);}}}><h3>Add master amenity</h3><label>Facility name<input name="name" required/></label><button className="button button-outline">Add amenity</button></form></div>; }
-function HistoryTable({items,onEnd}) { return items.length?(items[0].total!==undefined?<div className="room-grid">{items.map(r=><article className="occupancy-card" key={r.status}><span className="eyebrow">REQUEST STATUS</span><h3>{r.status}</h3><p>{r.total} requests</p></article>)}</div>:<div className="table-wrap"><table><thead><tr><th>Student / hostel</th><th>Room & bed</th><th>Status</th><th>Move-in</th><th>Remark / action</th></tr></thead><tbody>{items.map((r,i)=><tr key={`${r.request_id}-${i}`}><td><strong>{r.student_name||r.hostel_name}</strong><small>{r.hostel_name}</small></td><td>Room {r.room_number} · Bed {r.bed_label}</td><td><span className={`status ${r.status.toLowerCase()}`}>{r.status}</span>{r.allocation_status&&<small>{r.allocation_status} allocation</small>}</td><td>{r.start_date||r.requested_at}</td><td>{r.admin_remark||'—'}{onEnd&&r.allocation_status==='Active'&&<button className="text-button danger" onClick={()=>onEnd(r.allocation_id)}>End stay</button>}</td></tr>)}</tbody></table></div>):<div className="empty-state"><h3>No history to show</h3><p>Booking activity will appear here.</p></div>; }
-
-export default App;

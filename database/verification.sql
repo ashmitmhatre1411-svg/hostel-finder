@@ -1,47 +1,43 @@
--- Run after schema.sql, triggers_procedures.sql, views.sql, and seed.sql.
--- This leaves the database unchanged: expected constraint failures are caught.
+-- Run once after schema.sql, triggers_procedures.sql, views.sql, and seed.sql.
+-- This approves the seeded test booking and rejects its competing room request.
 USE hostel_finder;
-DROP PROCEDURE IF EXISTS run_business_checks;
+DROP PROCEDURE IF EXISTS run_project_checks;
 DELIMITER $$
-CREATE PROCEDURE run_business_checks()
+CREATE PROCEDURE run_project_checks()
 BEGIN
   DECLARE gender_rejected BOOLEAN DEFAULT FALSE;
-  DECLARE second_pending_rejected BOOLEAN DEFAULT FALSE;
-  DECLARE active_allocation_rejected BOOLEAN DEFAULT FALSE;
-  DECLARE cross_hostel_rejected BOOLEAN DEFAULT FALSE;
+  DECLARE owner_scope_rejected BOOLEAN DEFAULT FALSE;
+  DECLARE second_approval_rejected BOOLEAN DEFAULT FALSE;
+
+  CALL approve_booking(101, 1);
+
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLSTATE '45000' SET second_approval_rejected = TRUE;
+    CALL approve_booking(102, 1);
+  END;
 
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLSTATE '45000' SET gender_rejected = TRUE;
-    INSERT INTO BOOKING_REQUEST (student_id,bed_id,requested_move_in,student_note)
-    VALUES (7,3,CURRENT_DATE,'Verification: must fail because this is a girls-hostel student applying to a boys hostel bed.');
+    INSERT INTO BOOKING (check_in_date,student_id,room_id)
+    VALUES (DATE_ADD(CURRENT_DATE, INTERVAL 14 DAY),4,4);
   END;
 
   BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLSTATE '45000' SET active_allocation_rejected = TRUE;
-    INSERT INTO BOOKING_REQUEST (student_id,bed_id,requested_move_in,student_note)
-    VALUES (1,10,CURRENT_DATE,'Verification: must fail because this student has an active allocation.');
+    DECLARE CONTINUE HANDLER FOR SQLSTATE '45000' SET owner_scope_rejected = TRUE;
+    CALL reject_booking(104, 2);
   END;
 
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR 1062 SET second_pending_rejected = TRUE;
-    INSERT INTO BOOKING_REQUEST (student_id,bed_id,requested_move_in,student_note)
-    VALUES (5,10,CURRENT_DATE,'Verification: must fail because this student already has a Pending request.');
-  END;
-
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLSTATE '45000' SET cross_hostel_rejected = TRUE;
-    CALL reject_booking_request(107,2,'Verification: must fail because admin 2 does not own hostel 2.');
-  END;
-
-  SELECT 'Same-bed approval and competing auto-rejection' AS check_name,
-    IF((SELECT status FROM BOOKING_REQUEST WHERE request_id=101)='Approved'
-      AND (SELECT status FROM BOOKING_REQUEST WHERE request_id=102)='Rejected'
-      AND (SELECT COUNT(*) FROM ALLOCATION WHERE bed_id=1 AND status='Active')=1,'PASS','FAIL') AS result;
-  SELECT 'Gender mismatch rejected by trigger' AS check_name, IF(gender_rejected,'PASS','FAIL') AS result;
-  SELECT 'Second Pending request rejected' AS check_name, IF(second_pending_rejected,'PASS','FAIL') AS result;
-  SELECT 'New request rejected for active allocation holder' AS check_name, IF(active_allocation_rejected,'PASS','FAIL') AS result;
-  SELECT 'Cross-hostel admin decision rejected' AS check_name, IF(cross_hostel_rejected,'PASS','FAIL') AS result;
+  SELECT 'Double booking prevented; one approval for one bed' AS check_name,
+    IF((SELECT COUNT(*) FROM BOOKING WHERE room_id=1 AND status='Approved')=1
+      AND (SELECT available_beds FROM ROOM WHERE room_id=1)=0
+      AND second_approval_rejected,'PASS','FAIL') AS result;
+  SELECT 'Competing request auto-rejected when room filled' AS check_name,
+    IF((SELECT status FROM BOOKING WHERE booking_id=102)='Rejected','PASS','FAIL') AS result;
+  SELECT 'Gender-mismatched booking rejected' AS check_name,
+    IF(gender_rejected,'PASS','FAIL') AS result;
+  SELECT 'Owner cannot decide for another owner’s hostel' AS check_name,
+    IF(owner_scope_rejected,'PASS','FAIL') AS result;
 END$$
 DELIMITER ;
-CALL run_business_checks();
-DROP PROCEDURE run_business_checks;
+CALL run_project_checks();
+DROP PROCEDURE run_project_checks;

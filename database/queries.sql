@@ -1,43 +1,53 @@
 USE hostel_finder;
 
--- Budget, room type, and selected amenities (replace 6000, 'Double', and amenity ids).
-SELECT r.room_id, h.name AS hostel, r.room_number, r.room_type, r.rent_per_bed,
-       SUM(b.status = 'Available') AS available_beds,
-       GROUP_CONCAT(DISTINCT a.amenity_name ORDER BY a.amenity_name) AS amenities
-FROM ROOM r JOIN HOSTEL h ON h.hostel_id = r.hostel_id
-JOIN BED b ON b.room_id = r.room_id
-LEFT JOIN HOSTEL_AMENITY ha ON ha.hostel_id = h.hostel_id
-LEFT JOIN AMENITY a ON a.amenity_id = ha.amenity_id
-WHERE h.is_active = TRUE AND r.is_active = TRUE
-  AND r.rent_per_bed <= 6000 AND r.room_type = 'Double'
-  AND a.amenity_id IN (1, 2)
-GROUP BY r.room_id HAVING available_beds > 0 AND COUNT(DISTINCT a.amenity_id) = 2;
-
--- Availability counts by hostel.
-SELECT h.hostel_id, h.name,
-       COUNT(DISTINCT CASE WHEN b.status = 'Available' THEN b.bed_id END) AS available_beds,
-       COUNT(DISTINCT CASE WHEN b.status = 'Booked' THEN b.bed_id END) AS booked_beds,
-       COUNT(DISTINCT CASE WHEN b.status = 'Maintenance' THEN b.bed_id END) AS maintenance_beds
-FROM HOSTEL h JOIN ROOM r ON r.hostel_id = h.hostel_id JOIN BED b ON b.room_id = r.room_id
-WHERE h.is_active = TRUE AND r.is_active = TRUE GROUP BY h.hostel_id, h.name;
-
--- Compatibility ranking against the signed-in student's current-room occupants.
-SELECT c.other_student_id, c.compatibility_percent
-FROM v_student_compatibility c
-WHERE c.student_id = 1 AND c.other_student_id IN (
-  SELECT a.student_id FROM ALLOCATION a JOIN BED b ON b.bed_id = a.bed_id
-  WHERE b.room_id = 1 AND a.status = 'Active'
-) ORDER BY c.compatibility_percent DESC;
-
--- Pending requests grouped by hostel.
-SELECT h.hostel_id, h.name, COUNT(*) AS pending_requests
-FROM BOOKING_REQUEST q JOIN BED b ON b.bed_id = q.bed_id JOIN ROOM r ON r.room_id = b.room_id
+-- Search rooms by city, rent budget, room type, and selected hostel facilities.
+SELECT r.room_id, h.name AS hostel, h.city, r.room_type, r.capacity,
+       r.available_beds, r.rent_per_month,
+       GROUP_CONCAT(DISTINCT f.facility_name ORDER BY f.facility_name) AS facilities
+FROM ROOM r
 JOIN HOSTEL h ON h.hostel_id = r.hostel_id
-WHERE q.status = 'Pending' GROUP BY h.hostel_id, h.name ORDER BY pending_requests DESC;
+JOIN HOSTEL_FACILITY hf ON hf.hostel_id = h.hostel_id
+JOIN FACILITY f ON f.facility_id = hf.facility_id
+WHERE h.city = 'Mumbai' AND r.rent_per_month <= 7000 AND r.room_type = 'Double'
+  AND f.facility_name IN ('Wi-Fi','Laundry')
+GROUP BY r.room_id, h.hostel_id
+HAVING r.available_beds > 0 AND COUNT(DISTINCT f.facility_name) = 2;
 
--- Student booking and status history.
-SELECT q.request_id, q.status, q.requested_move_in, q.requested_at, q.admin_remark,
-       hs.old_status, hs.new_status, hs.changed_at, ad.name AS changed_by
-FROM BOOKING_REQUEST q JOIN BOOKING_STATUS_HISTORY hs ON hs.request_id = q.request_id
-LEFT JOIN ADMIN ad ON ad.admin_id = hs.changed_by_admin
-WHERE q.student_id = 1 ORDER BY q.request_id DESC, hs.changed_at;
+-- Room availability counts by hostel.
+SELECT h.hostel_id, h.name,
+       SUM(r.capacity) AS total_beds,
+       SUM(r.capacity - r.available_beds) AS occupied_beds,
+       SUM(r.available_beds) AS available_beds
+FROM HOSTEL h JOIN ROOM r ON r.hostel_id = h.hostel_id
+GROUP BY h.hostel_id, h.name;
+
+-- Rank possible roommates for student 1 (only names and compatibility are shown).
+SELECT s.name, c.compatibility_percent
+FROM v_roommate_compatibility c
+JOIN STUDENT s ON s.student_id = c.other_student_id
+WHERE c.student_id = 1
+ORDER BY c.compatibility_percent DESC, s.name;
+
+-- Pending bookings grouped by hostel.
+SELECT h.hostel_id, h.name, COUNT(*) AS pending_bookings
+FROM BOOKING b
+JOIN ROOM r ON r.room_id = b.room_id
+JOIN HOSTEL h ON h.hostel_id = r.hostel_id
+WHERE b.status = 'Pending'
+GROUP BY h.hostel_id, h.name
+ORDER BY pending_bookings DESC;
+
+-- A student's booking history, including the room, hostel, and current status.
+SELECT b.booking_id, b.booking_date, b.check_in_date, b.status,
+       h.name AS hostel, r.room_type, r.rent_per_month
+FROM BOOKING b
+JOIN ROOM r ON r.room_id = b.room_id
+JOIN HOSTEL h ON h.hostel_id = r.hostel_id
+WHERE b.student_id = 1
+ORDER BY b.booking_date DESC, b.booking_id DESC;
+
+-- Reviews and average ratings for one hostel.
+SELECT h.name, AVG(rv.rating) AS average_rating, COUNT(rv.student_id) AS review_count
+FROM HOSTEL h LEFT JOIN REVIEW rv ON rv.hostel_id = h.hostel_id
+WHERE h.hostel_id = 1
+GROUP BY h.hostel_id, h.name;

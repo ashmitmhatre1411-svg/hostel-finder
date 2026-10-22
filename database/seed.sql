@@ -1,80 +1,67 @@
 USE hostel_finder;
 
-INSERT INTO HOSTEL (hostel_id,name,hostel_type,address,distance_km,contact_no,rules,is_active) VALUES
-(1,'Aarohan Boys Residence','Boys','Near Sardar Patel Institute of Technology, Andheri West, Mumbai',0.7,'9000000101','Visitor hours: 8 AM–9 PM. Quiet hours after 10 PM. No smoking indoors.',TRUE),
-(2,'Sakhi Girls Hostel','Girls','JVPD Scheme, Vile Parle West, Mumbai',1.2,'9000000102','Visitor hours: 9 AM–8 PM. Quiet hours after 10 PM. Entry register required.',TRUE),
-(3,'Campus Grove Living','Co-ed','Bhavans Campus Road, Andheri West, Mumbai',0.4,'9000000103','Separate residential floors. Quiet hours after 10 PM. Shared common areas.',TRUE);
+-- Demo password for all seeded accounts: HostelDemo2026!
+-- Only salted scrypt hashes are stored in this file.
+INSERT INTO OWNER (owner_id,name,email,phone,password_hash) VALUES
+(1,'Anita Sharma','anita@hostel-owner.invalid','9000000201','scrypt$16384$8$1$b9f7e008d3c777923f10f645e7b3380d$268a96d48acc55d327c9bf984c0dd30bd8c7f912705d8639533bb999bc150b61422aab94e6b1a0df411722e3751d42faf512904721ec5fd4a72ea513be3ad689'),
+(2,'Meera Iyer','meera@hostel-owner.invalid','9000000202','scrypt$16384$8$1$774bb2079440fa0f6b3cea6febb3526e$f93e7490fe62a127e1d7c8148fa8aed0872fd2b6f8245448e642551071a749dfcc51be78e36815ef90a182f0d4ead24617bdf6c65b3ddd0c0709ec868ed44776'),
+(3,'Rahul Desai','rahul@hostel-owner.invalid','9000000203','scrypt$16384$8$1$0292d72c2d6a557e51ff1d7fbea62d48$cc61fb84ec1e864ec64e50971013a0a58edeb8f5d2e8349f4b74712479108967abc76a9b5b7d2b9556c4213dcffffa451288d23fbbe32e1b410ee97be505f2a3');
 
-INSERT INTO AMENITY (amenity_id,amenity_name) VALUES
-(1,'Wi-Fi'),(2,'Laundry'),(3,'Study room'),(4,'CCTV'),(5,'Power backup'),(6,'Gym'),(7,'Parking'),(8,'Common kitchen');
+INSERT INTO HOSTEL (hostel_id,name,address,city,gender_type,owner_id) VALUES
+(1,'Aarohan Boys Residence','S.V. Road, Andheri West','Mumbai','Boys',1),
+(2,'Sakhi Girls Hostel','JVPD Scheme, Vile Parle West','Mumbai','Girls',2),
+(3,'Campus Grove Living','Bhavans Campus Road, Andheri West','Mumbai','Co-ed',3);
 
-INSERT INTO HOSTEL_AMENITY (hostel_id,amenity_id) VALUES
+INSERT INTO FACILITY (facility_id,facility_name) VALUES
+(1,'Wi-Fi'),(2,'Laundry'),(3,'Study room'),(4,'CCTV'),(5,'Power backup'),
+(6,'Parking'),(7,'Mess'),(8,'Gym'),(9,'Common kitchen');
+
+INSERT INTO HOSTEL_FACILITY (hostel_id,facility_id) VALUES
 (1,1),(1,2),(1,3),(1,4),(1,5),(1,7),(1,8),
-(2,1),(2,2),(2,3),(2,4),(2,5),(2,6),(2,8),
-(3,1),(3,2),(3,3),(3,4),(3,5),(3,6),(3,7),(3,8);
+(2,1),(2,2),(2,3),(2,4),(2,5),(2,7),(2,9),
+(3,1),(3,2),(3,3),(3,4),(3,5),(3,6),(3,7),(3,8),(3,9);
 
-INSERT INTO ADMIN (admin_id,name,email,password_hash,role,hostel_id) VALUES
-(1,'Hostel Finder System Admin','system-admin@hostel-finder.invalid','scrypt$16384$8$1$274410dc0258298fb1371343efabc430$bda3b7884b194ca5ae3f74bbf0644d5da9b423870645325ad9842041f0152c6126196b0f458808cd36912cdc52fead00e35ac5130e1718983976b2a90564ff42','System Admin',NULL),
-(2,'Aarohan Hostel Office','boys-admin@hostel-finder.invalid','scrypt$16384$8$1$b1a6fdef4c39eb863d1f8d0f83654cde$5697ab9f36870deecd7fdf7306648d7ae99741815b92d7822570c1d780204a7e8b0a1439f5a414528b0092a468d5346c3db0cea2b5c7c8ab0ec1e6e5def0a09d','Hostel Admin',1),
-(3,'Sakhi Hostel Office','girls-admin@hostel-finder.invalid','scrypt$16384$8$1$ef8710a9d05ad2d9dc8b6928c6c6d256$ee054ff18165d8233d0f2c9cd19df304133257a186ed8331b16794750cd3b186fe818c64da2b9fce06c0cf72a3a552330f66ba2f79f094001fb1adba69fd2f06','Hostel Admin',2),
-(4,'Campus Grove Hostel Office','coed-admin@hostel-finder.invalid','scrypt$16384$8$1$8469067588df14828cbd7e18bdf42009$7daf3b4aa7ae4b33e773b5ca936e98bbe1bc7525d8a5b847d365786bae11cc90841c1fefe0694ba525b3fc4cfe6951ba8ebf5e6776d967c19bf2dd3f49f81cda','Hostel Admin',3);
+-- 24 rooms and 54 total beds. Room 1 has one bed for the booking concurrency demo.
+INSERT INTO ROOM (room_id,room_type,capacity,rent_per_month,available_beds,hostel_id) VALUES
+(1,'Single',1,9500,1,1),(2,'Double',2,6500,1,1),(3,'Triple',3,5200,3,1),(4,'Double',2,6800,2,1),
+(5,'Triple',3,5000,3,1),(6,'Double',2,6200,2,1),(7,'Triple',3,5400,3,1),(8,'Double',2,7000,2,1),
+(9,'Single',1,10500,1,2),(10,'Double',2,7500,2,2),(11,'Triple',3,5900,3,2),(12,'Double',2,7200,2,2),
+(13,'Triple',3,5700,3,2),(14,'Double',2,7800,2,2),(15,'Triple',3,6100,3,2),(16,'Double',2,7400,2,2),
+(17,'Single',1,11000,1,3),(18,'Double',2,8200,2,3),(19,'Triple',3,6500,3,3),(20,'Double',2,8000,2,3),
+(21,'Triple',3,6300,3,3),(22,'Double',2,8500,2,3),(23,'Triple',3,6700,3,3),(24,'Double',2,8300,2,3);
 
--- 24 rooms: two single rooms, three double rooms, and three triple rooms per hostel.
-INSERT INTO ROOM (room_id,hostel_id,room_number,floor_no,room_type,total_beds,rent_per_bed,has_ac,has_attached_bath,has_mess,is_active) VALUES
-(101,1,'A-101',1,'Single',1,9200,TRUE,TRUE,TRUE,TRUE),(102,1,'A-102',1,'Single',1,8800,FALSE,FALSE,TRUE,TRUE),
-(103,1,'A-201',2,'Double',2,6400,TRUE,TRUE,TRUE,TRUE),(104,1,'A-202',2,'Double',2,5900,FALSE,FALSE,TRUE,TRUE),(105,1,'A-203',2,'Double',2,6100,TRUE,FALSE,TRUE,TRUE),
-(106,1,'A-301',3,'Triple',3,4800,TRUE,TRUE,TRUE,TRUE),(107,1,'A-302',3,'Triple',3,4200,FALSE,FALSE,TRUE,TRUE),(108,1,'A-303',3,'Triple',3,4500,FALSE,TRUE,TRUE,TRUE),
-(201,2,'S-101',1,'Single',1,9800,TRUE,TRUE,TRUE,TRUE),(202,2,'S-102',1,'Single',1,9000,FALSE,FALSE,TRUE,TRUE),
-(203,2,'S-201',2,'Double',2,6900,TRUE,TRUE,TRUE,TRUE),(204,2,'S-202',2,'Double',2,6300,FALSE,FALSE,TRUE,TRUE),(205,2,'S-203',2,'Double',2,6500,TRUE,FALSE,TRUE,TRUE),
-(206,2,'S-301',3,'Triple',3,5100,TRUE,TRUE,TRUE,TRUE),(207,2,'S-302',3,'Triple',3,4600,FALSE,FALSE,TRUE,TRUE),(208,2,'S-303',3,'Triple',3,4800,FALSE,TRUE,TRUE,TRUE),
-(301,3,'G-101',1,'Single',1,10500,TRUE,TRUE,TRUE,TRUE),(302,3,'G-102',1,'Single',1,9600,FALSE,FALSE,TRUE,TRUE),
-(303,3,'G-201',2,'Double',2,7200,TRUE,TRUE,TRUE,TRUE),(304,3,'G-202',2,'Double',2,6700,FALSE,FALSE,TRUE,TRUE),(305,3,'G-203',2,'Double',2,7000,TRUE,FALSE,TRUE,TRUE),
-(306,3,'G-301',3,'Triple',3,5500,TRUE,TRUE,TRUE,TRUE),(307,3,'G-302',3,'Triple',3,5000,FALSE,FALSE,TRUE,TRUE),(308,3,'G-303',3,'Triple',3,5200,FALSE,TRUE,TRUE,TRUE);
+INSERT INTO STUDENT (student_id,name,email,password_hash,phone,gender,college) VALUES
+(1,'Aarav Desai','aarav.desai@student-hostel.invalid','scrypt$16384$8$1$5cb64ad4ca7927b4ac08ecbe319b5eda$b9888e2f06b41756ce243e78c1889b3b601c85f70d7691536ef5f2e32c74f26df6c89b61d9451dbd621099471637f7e78f280af7fa58c5b4be1b2edf2a46e0c0','9000000301','Male','Sardar Patel Institute of Technology'),
+(2,'Rohan Kulkarni','rohan.kulkarni@student-hostel.invalid','scrypt$16384$8$1$6245684e628c82ba16f378dd2a0fa9cb$3a64ec5b620e9f9520edd4451e9c6710886831192d36e6eb2c611c82a5f4eaafa9a0dfadd3e66ce9d019fed32257905fd328bf460704eb0cc4eb1d13f945d509','9000000302','Male','Sardar Patel Institute of Technology'),
+(3,'Kabir Shah','kabir.shah@student-hostel.invalid','scrypt$16384$8$1$67d31d26b3cae7de9bbf57e3950bc341$05c516b108013bb446f5ed12a195537a296f6f5daf22f148cb687b4813695abcba09af7f0d51e9fec6550996cc895c820451fdd1c2472847d58f3f89972d8996','9000000303','Male','Sardar Patel Institute of Technology'),
+(4,'Sana Merchant','sana.merchant@student-hostel.invalid','scrypt$16384$8$1$dacd1425971337d606f26a32dca99125$98dc1b22b3900aa2e4dceeb52b0eeb86c15489c91e3004b65a7da07cc664a2f4201ce6f4c82b63bb39a09af2f93eb9b984dfa2865231ae411a4244647ac96298','9000000304','Female','Sardar Patel Institute of Technology'),
+(5,'Nisha Patil','nisha.patil@student-hostel.invalid','scrypt$16384$8$1$840c093aeb22f6b770e74213762eb341$33b83afadeb3d38f8a084152655541a568ee52a49f9030e429c7ee2027758ae53d91740743dff5c4baa32fd32e8239baa3fea6886d312e2a6533b64b216a851f','9000000305','Female','Sardar Patel Institute of Technology'),
+(6,'Ishaan Joshi','ishaan.joshi@student-hostel.invalid','scrypt$16384$8$1$0b25ecd20e0c387cbf5f84a52009d965$a6226995938408fb28f6b1d8c81ab975f236f685434ad2911c4df5e3086de18d5e4a7af39d983bba8c1e21827d18a7de8b0244d4e3f479a3a99c3f8b6bdf812b','9000000306','Male','Sardar Patel Institute of Technology'),
+(7,'Ananya Rao','ananya.rao@student-hostel.invalid','scrypt$16384$8$1$f51f2e9999cae9fa16bb92429f22262a$95c4b2d6607fd80d662ab6717386d4461bcda430bd35be50f568184e385816d504907162524bb8fa00795dc8d5d511487b2623a48daeb8b691904c69eba6d18d','9000000307','Female','Sardar Patel Institute of Technology'),
+(8,'Dev Mehta','dev.mehta@student-hostel.invalid','scrypt$16384$8$1$3adad41f7d74dfd53f5f1e36031800a3$35056370bd7b04c5efd0682fafae6021db166735f478ba5ccedf34417eb352d7b1f1afe7f2e6623d39c59d4ad8679bf722fb047388bea3ed0622ac6c46440696','9000000308','Male','Sardar Patel Institute of Technology'),
+(9,'Mira Fernandes','mira.fernandes@student-hostel.invalid','scrypt$16384$8$1$7a0a468f7eeeb361f0113497b92d4ade$5d1cb42af04e1f7eadf7c523f6bae9709ba1aacbf3471c4f05cc1fc7190d7def3045ac39b9860e4665e10909fdac94e3d038625faf7f0ca54851db9ec6037a02','9000000309','Female','Sardar Patel Institute of Technology'),
+(10,'Arjun Nair','arjun.nair@student-hostel.invalid','scrypt$16384$8$1$97e864b6a50787702ded44bcc9f551a6$74bd9ccb4a7fd83b51359e7f7dcfe8bf4485d8838e598178cd2a5cb2642abdf7ea0e73627ecbb90f60c38aa076705594b91020a6e6dd0fa494718dc8d36b84a0','9000000310','Male','Sardar Patel Institute of Technology'),
+(11,'Tara Shah','tara.shah@student-hostel.invalid','scrypt$16384$8$1$9eaadda8e92142b8959f86303569fd78$80d87074a2565dcb921d1cfa36f156654d8e40161a5e79ceff703747c91cc368fb3ec157dec280826c80adaa4417d0196e88e41228546973d9ac671cabadfcbc','9000000311','Female','Sardar Patel Institute of Technology'),
+(12,'Neel Kamat','neel.kamat@student-hostel.invalid','scrypt$16384$8$1$e796208551ce029265da36a49f1c67f4$bdb48ab6b62d3cba789839b3ad18427c7d9f47ef7a49502610be1de3297e664466a45d9c329de1804d9c06b715ae38a86f280fa869a5d0fc4796deb128fb8192','9000000312','Non-binary','Sardar Patel Institute of Technology');
 
-INSERT INTO BED (bed_id,room_id,bed_label,status) VALUES
-(1,101,'A', 'Available'),(2,102,'A','Available'),(3,103,'A','Available'),(4,103,'B','Available'),(5,104,'A','Available'),(6,104,'B','Available'),
-(7,105,'A','Available'),(8,105,'B','Available'),(9,106,'A','Available'),(10,106,'B','Available'),(11,106,'C','Available'),(12,107,'A','Available'),(13,107,'B','Available'),(14,107,'C','Available'),(15,108,'A','Available'),(16,108,'B','Available'),(17,108,'C','Available'),
-(18,201,'A','Available'),(19,202,'A','Available'),(20,203,'A','Available'),(21,203,'B','Available'),(22,204,'A','Available'),(23,204,'B','Available'),(24,205,'A','Available'),(25,205,'B','Available'),(26,206,'A','Available'),(27,206,'B','Available'),(28,206,'C','Available'),(29,207,'A','Available'),(30,207,'B','Available'),(31,207,'C','Available'),(32,208,'A','Available'),(33,208,'B','Available'),(34,208,'C','Available'),
-(35,301,'A','Available'),(36,302,'A','Available'),(37,303,'A','Available'),(38,303,'B','Available'),(39,304,'A','Available'),(40,304,'B','Available'),(41,305,'A','Available'),(42,305,'B','Available'),(43,306,'A','Available'),(44,306,'B','Available'),(45,306,'C','Available'),(46,307,'A','Available'),(47,307,'B','Available'),(48,307,'C','Available'),(49,308,'A','Available'),(50,308,'B','Available'),(51,308,'C','Available');
+INSERT INTO ROOMMATE_PREFERENCE (pref_id,smoking,sleep_schedule,food_type,cleanliness,max_budget,student_id) VALUES
+(1,'Non-smoker','Early','Vegetarian',5,7000,1),(2,'Non-smoker','Flexible','Vegetarian',4,6500,2),
+(3,'Occasional','Late','Eggetarian',3,7500,3),(4,'Non-smoker','Early','Vegetarian',5,8000,4),
+(5,'Non-smoker','Flexible','Vegan',4,7500,5),(6,'Non-smoker','Late','Non-vegetarian',3,6500,6),
+(7,'Occasional','Early','Eggetarian',4,8000,7),(8,'Smoker','Late','Non-vegetarian',2,7000,8),
+(9,'Non-smoker','Flexible','Vegetarian',5,8500,9),(10,'Non-smoker','Early','Eggetarian',4,9000,10),
+(11,'Occasional','Flexible','Vegetarian',3,7000,11),(12,'Non-smoker','Late','Vegan',5,7000,12);
 
-INSERT INTO STUDENT (student_id,roll_no,full_name,email,password_hash,phone,gender,department,year_of_study) VALUES
-(1,'HF2026001','Aarav Deshmukh','aarav.desai@student-hostel.invalid','scrypt$16384$8$1$be671c342465ef9a88a184931c2d831e$7f609ca0599e0a6bc83ec24570efcfd47dbe9fcf8fd211516aa37699548317d8e381a36c9452214358b9f52280b54976d042a0fc448bc7db599809f3403d3db8','9000000201','Male','Computer Engineering',2),
-(2,'HF2026002','Rohan Kulkarni','rohan.kulkarni@student-hostel.invalid','scrypt$16384$8$1$eab1dde69f7b7e200f3ba53f4ff7560d$9d799d324ae42b3ab91f078c7c9e2852890bf6e5bf720592bf5cae4827baa9237120b5c9637598500b7d0939f1b8fb978267117a6e1012956c99479d004e05fe','9000000202','Male','Information Technology',1),
-(3,'HF2026003','Ishaan Patil','ishaan.patil@student-hostel.invalid','scrypt$16384$8$1$3344a049a074397f18e5da5e5a35c8a3$5392166b97e4029ceb1838b37c8e2ca8da6ce43e4aee29a2882c56c64ee8f77abbfe52a8bff65fc9db2f289dedc5e3765d3acc7cab43023e4f64db7bb7073850','9000000203','Male','Electrical Engineering',3),
-(4,'HF2026004','Kabir Shah','kabir.shah@student-hostel.invalid','scrypt$16384$8$1$7c2b3a06e8f228d1d6835a6cff20c52d$6c99a0bae34b7176330799c6ead51fe8942f4c3e91b6375e583884d7e4a8094a20545f192eb8383d561e4151984419824d92cacefbc28ccd5196eabd96374b53','9000000204','Male','Electronics Engineering',2),
-(5,'HF2026005','Vihaan Joshi','vihaan.joshi@student-hostel.invalid','scrypt$16384$8$1$8f0f06bbfc888f8a926552768264987a$9affe6b8aa23c71de368af33d8244945b39bb70b0bec6bbc41f6307655aa066a06cf5530bcf2864632fd50d0b571dd49ec45aa74662d4f27c16612c7ae6b20ec','9000000205','Male','Mechanical Engineering',1),
-(6,'HF2026006','Neel Nair','neel.nair@student-hostel.invalid','scrypt$16384$8$1$52e00f211cf5ecf10aac2fe099283789$0bbb228b9f7f054a3555e8447a590ecbd6e8df1160e1033e015a96d95326bde8b5b0e8e307eb093b639da180d31a9669103e28783f21c87ba209a567f0d3fb0c','9000000206','Male','Computer Engineering',4),
-(7,'HF2026007','Ananya Rao','ananya.rao@student-hostel.invalid','scrypt$16384$8$1$87b3737cd4d82d3b0a4287e9ebb8c362$58b368eedf008ccd42c2d99bf2eb7cd923397367ace00d3f909b97395dab837457b1a396c8aa1bd0ef790778277b9593061fb74dcfc5a0c83a1b5e96adc02a94','9000000207','Female','Information Technology',2),
-(8,'HF2026008','Meera Iyer','meera.iyer@student-hostel.invalid','scrypt$16384$8$1$3509be2997fdd564617a6ac55da6be66$7eff46bcc8cbbbd8ec7ed9f9a6abbd571a10d1cf278435d9d96f50376d84f90b1f8764311dfb4a7680ad20426b149a99b0b7174367afb4b52f2d7c05e33c0087','9000000208','Female','Electronics Engineering',1),
-(9,'HF2026009','Sana Merchant','sana.merchant@student-hostel.invalid','scrypt$16384$8$1$6cb681ae06f33a408191bfb72792db73$4e878ad116f25b1c9ac7ea1d27d5bd2d2ec4c8dd28ae3fcc521cdde26dd5035225fe321d9c0902234a45f2de8ce4dc0e772cc155bf273d613ce55d615dc4cdbd','9000000209','Female','Computer Engineering',3),
-(10,'HF2026010','Pooja Menon','pooja.menon@student-hostel.invalid','scrypt$16384$8$1$70daeb0a727c62d2f8882064fea2eb8b$d436360b04ed626ace74fb518875245ec032d2957576854090e73d343ed1361ab26ab36afedbe441a8033ed581bfcc68d3f1169b562a967cad44998d48db80fb','9000000210','Female','Civil Engineering',4),
-(11,'HF2026011','Tara Merchant','tara.merchant@student-hostel.invalid','scrypt$16384$8$1$637f1350d7efac98af0c5ba6bff6b1eb$111c939946706d15bffbb36aed422924c0bfdbe910cbc98b2b1b6afd618878d1b30af656c861855b02eaf30ec7ac49fb801cfcbd6c777940a768e0a2416d9cc0','9000000211','Non-binary','Computer Engineering',2),
-(12,'HF2026012','Dev Malhotra','dev.malhotra@student-hostel.invalid','scrypt$16384$8$1$d6a5d2dab22ab81d0257985360e64dfd$afe9501a125412c8ac6932bf21d7691661a4d1fa6d2b943357108c9e307a2e1748af5209964702be57f429885063431e9925adfce64c62a685b6e4325b192cf6','9000000212','Male','Information Technology',2);
+-- Seed each status. Two Pending applications target room 1 (one bed) for the
+-- approval/overbooking verification script.
+INSERT INTO BOOKING (booking_id,booking_date,check_in_date,status,student_id,room_id) VALUES
+(101,CURRENT_DATE,DATE_ADD(CURRENT_DATE, INTERVAL 14 DAY),'Pending',1,1),
+(102,CURRENT_DATE,DATE_ADD(CURRENT_DATE, INTERVAL 14 DAY),'Pending',2,1),
+(103,CURRENT_DATE,DATE_ADD(CURRENT_DATE, INTERVAL 21 DAY),'Approved',3,2),
+(104,CURRENT_DATE,DATE_ADD(CURRENT_DATE, INTERVAL 28 DAY),'Rejected',4,3),
+(105,CURRENT_DATE,DATE_ADD(CURRENT_DATE, INTERVAL 35 DAY),'Cancelled',5,10);
 
-INSERT INTO STUDENT_PREFERENCE (student_id,sleep_schedule,cleanliness_level,smoking_habit,noise_tolerance,study_habit,budget_min,budget_max,preferred_room_type,move_in_date) VALUES
-(1,'Early',4,'Non-smoker',2,'Daily',4000,6500,'Double','2026-11-01'),(2,'Flexible',3,'Non-smoker',3,'Flexible',3500,6000,'Triple','2026-11-05'),
-(3,'Late',3,'Occasional',4,'Exam-focused',4000,7000,'Double','2026-11-01'),(4,'Flexible',4,'Non-smoker',3,'Daily',5000,7500,'Double','2026-12-01'),
-(5,'Early',2,'Non-smoker',2,'Exam-focused',3500,5000,'Triple','2026-11-15'),(6,'Late',5,'Smoker',4,'Flexible',4000,7000,'Triple','2026-11-12'),
-(7,'Early',4,'Non-smoker',2,'Daily',4500,7000,'Double','2026-11-01'),(8,'Flexible',3,'Non-smoker',3,'Flexible',4000,6500,'Triple','2026-11-10'),
-(9,'Late',4,'Non-smoker',4,'Exam-focused',4500,7500,'Double','2026-12-01'),(10,'Early',5,'Non-smoker',2,'Daily',5000,8000,'Single','2026-11-20'),
-(11,'Flexible',3,'Non-smoker',3,'Flexible',4000,6500,'Double','2026-11-05'),(12,'Late',3,'Occasional',4,'Exam-focused',4500,7000,'Triple','2026-11-15');
-
--- Requests start pending so triggers create the initial history row. The procedure
--- below approves one request and automatically rejects its competing application.
-INSERT INTO BOOKING_REQUEST (request_id,student_id,bed_id,requested_move_in,status,student_note) VALUES
-(101,1,1,'2026-11-01','Pending','Quiet student, looking for a long-term stay.'),
-(102,2,1,'2026-11-05','Pending','I can move in early.'),
-(103,3,3,'2026-11-01','Pending','Near the campus shuttle would be helpful.'),
-(104,4,4,'2026-12-01','Pending','I will confirm my travel dates shortly.'),
-(105,5,9,'2026-11-15','Pending','Prefer a study-friendly floor.'),
-(106,6,12,'2026-11-12','Pending','Please let me know about the mess timings.'),
-(107,7,18,'2026-11-01','Pending','Interested in a room near the common study area.'),
-(108,8,20,'2026-11-10','Pending','I can attend a viewing this week.'),
-(109,9,22,'2026-12-01','Pending','Please share the move-in checklist.'),
-(110,10,26,'2026-11-20','Pending','Looking for a calm study environment.'),
-(111,11,37,'2026-11-05','Pending','Flexible move-in by a few days.'),
-(112,12,43,'2026-11-15','Pending','Interested in the available triple rooms.');
-
-CALL approve_booking_request(101,2);
-CALL reject_booking_request(103,2,'Applicant selected a different room.');
-CALL cancel_booking_request(104,4);
+INSERT INTO REVIEW (student_id,hostel_id,rating,comment) VALUES
+(6,1,5,'Clean rooms and helpful staff.'),
+(7,2,4,'Good location near campus.'),
+(8,3,5,'Convenient shared study space.');
