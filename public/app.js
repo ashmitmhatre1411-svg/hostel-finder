@@ -8,7 +8,6 @@ const state = {
   student: { profile: null, preferences: null, bookings: [], matches: [] },
   owner: { hostels: [], bookings: [] }, notice: '', error: '', busy: false, loading: true
 };
-const today = new Date().toISOString().slice(0, 10);
 
 function el(tag, attrs, ...children) {
   const item = document.createElement(tag);
@@ -51,7 +50,26 @@ function panel(...children) { return el('div', { className: 'panel' }, ...childr
 function heading(level, text) { return el('h' + level, {}, text); }
 function paragraph(text, cls = '') { return el('p', { className: cls }, text); }
 function money(value) { return '₹' + Number(value).toLocaleString('en-IN'); }
-function dateLabel(value) { return value ? new Date(String(value).slice(0, 10) + 'T00:00:00').toLocaleDateString() : '—'; }
+function dateLabel(value) {
+  if (!value) return '—';
+  const [year, month, day] = String(value).slice(0, 10).split('-');
+  return year && month && day ? `${day}-${month}-${year}` : '—';
+}
+function dateInputToIso(value) {
+  const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(String(value).trim());
+  if (!match) throw new Error('Enter the date as DD-MM-YYYY.');
+  const [, day, month, year] = match;
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  if (date.getUTCFullYear() !== Number(year) || date.getUTCMonth() !== Number(month) - 1 || date.getUTCDate() !== Number(day)) {
+    throw new Error('Enter a valid date as DD-MM-YYYY.');
+  }
+  const todayLocal = new Date();
+  todayLocal.setHours(0, 0, 0, 0);
+  if (new Date(Number(year), Number(month) - 1, Number(day)) < todayLocal) {
+    throw new Error('Check-in date cannot be in the past.');
+  }
+  return `${year}-${month}-${day}`;
+}
 
 async function api(path, options = {}) {
   const token = localStorage.getItem(tokenKey);
@@ -186,7 +204,9 @@ function renderHostelDetails() {
     let request = state.user?.kind === 'student' && room.available_beds > 0
       ? form('booking',
         el('input', { type: 'hidden', name: 'roomId', value: room.room_id }),
-        el('input', { type: 'date', name: 'checkInDate', min: today, required: true, 'aria-label': 'Check-in date' }),
+        el('input', { type: 'text', name: 'checkInDate', placeholder: 'DD-MM-YYYY', inputmode: 'numeric',
+          pattern: '\\d{2}-\\d{2}-\\d{4}', maxlength: 10, required: true,
+          'aria-label': 'Check-in date, day-month-year' }),
         el('button', { className: 'button primary small', disabled: state.busy }, 'Request')
       )
       : el('span', {}, state.user ? 'Student account required' : 'Sign in as a student to request');
@@ -407,7 +427,7 @@ async function submitForm(event) {
   } else if (kind === 'booking') {
     const roomId = Number(target.dataset.roomId);
     await run(async () => {
-      await api('/bookings', send('POST', { roomId, checkInDate: values.checkInDate }));
+      await api('/bookings', send('POST', { roomId, checkInDate: dateInputToIso(values.checkInDate) }));
       await loadRooms(); await loadAccount();
       state.selected = await api('/hostels/' + state.selected.hostel.hostel_id);
     }, 'Booking request submitted. The owner must approve it.');
